@@ -1,9 +1,8 @@
 ## NexyLauncher 1.0.0
 
-**Próximamente: cuentas de Microsoft y más mejoras.**
+### Novedades
 
-### Qué incluye
-
+- Próximamente: cuentas de Microsoft y más mejoras.
 - Cuentas offline: crea, cambia y elimina nombres de jugador sin cuenta de Microsoft.
 - Instancias aisladas: cada una con su versión de Minecraft, cargador, mods, mundos, recursos y ajustes.
 - Mods desde Modrinth y CurseForge: busca, instala, activa, desactiva y actualiza mods compatibles.
