@@ -1,0 +1,932 @@
+<!DOCTYPE html>
+<html lang="es">
+<head>
+  <meta charset="UTF-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1.0">
+  <meta http-equiv="Content-Security-Policy" content="default-src 'self'; img-src 'self' data: https:; style-src 'self' 'unsafe-inline'; script-src 'self'; font-src 'self'; connect-src 'none'; object-src 'none'; base-uri 'self'; form-action 'none'">
+  <title>NexyLauncher 1.0</title>
+  <link rel="stylesheet" href="style.css">
+</head>
+<body>
+  <svg class="svg-sprite" aria-hidden="true" xmlns="http://www.w3.org/2000/svg">
+    <symbol id="i-home" viewBox="0 0 24 24"><path d="M3 10.5 12 3l9 7.5V21a1 1 0 0 1-1 1h-5v-6H9v6H4a1 1 0 0 1-1-1z"/></symbol>
+    <symbol id="i-layers" viewBox="0 0 24 24"><path d="m12 2 10 5-10 5L2 7z"/><path d="m2 12 10 5 10-5"/><path d="m2 17 10 5 10-5"/></symbol>
+    <symbol id="i-grid" viewBox="0 0 24 24"><rect x="3" y="3" width="7" height="7" rx="1.6"/><rect x="14" y="3" width="7" height="7" rx="1.6"/><rect x="3" y="14" width="7" height="7" rx="1.6"/><rect x="14" y="14" width="7" height="7" rx="1.6"/></symbol>
+    <symbol id="i-box" viewBox="0 0 24 24"><path d="M21 16V8a2 2 0 0 0-1-1.73l-7-4a2 2 0 0 0-2 0l-7 4A2 2 0 0 0 3 8v8a2 2 0 0 0 1 1.73l7 4a2 2 0 0 0 2 0l7-4A2 2 0 0 0 21 16z"/><path d="m3.3 7 8.7 5 8.7-5"/><path d="M12 22V12"/></symbol>
+    <symbol id="i-server" viewBox="0 0 24 24"><rect x="2" y="3" width="20" height="7" rx="2"/><rect x="2" y="14" width="20" height="7" rx="2"/><path d="M6 6.5h.01M6 17.5h.01"/></symbol>
+    <symbol id="i-settings" viewBox="0 0 24 24"><circle cx="12" cy="12" r="3"/><path d="M19.4 15a1.65 1.65 0 0 0 .33 1.82l.06.06a2 2 0 0 1-2.83 2.83l-.06-.06a1.65 1.65 0 0 0-1.82-.33 1.65 1.65 0 0 0-1 1.51V21a2 2 0 0 1-4 0v-.09A1.65 1.65 0 0 0 9 19.4a1.65 1.65 0 0 0-1.82.33l-.06.06a2 2 0 0 1-2.83-2.83l.06-.06a1.65 1.65 0 0 0 .33-1.82 1.65 1.65 0 0 0-1.51-1H3a2 2 0 0 1 0-4h.09A1.65 1.65 0 0 0 4.6 9a1.65 1.65 0 0 0-.33-1.82l-.06-.06a2 2 0 0 1 2.83-2.83l.06.06a1.65 1.65 0 0 0 1.82.33H9a1.65 1.65 0 0 0 1-1.51V3a2 2 0 0 1 4 0v.09a1.65 1.65 0 0 0 1 1.51 1.65 1.65 0 0 0 1.82-.33l.06-.06a2 2 0 0 1 2.83 2.83l-.06.06a1.65 1.65 0 0 0-.33 1.82V9a1.65 1.65 0 0 0 1.51 1H21a2 2 0 0 1 0 4h-.09a1.65 1.65 0 0 0-1.51 1z"/></symbol>
+    <symbol id="i-user" viewBox="0 0 24 24"><path d="M20 21v-2a4 4 0 0 0-4-4H8a4 4 0 0 0-4 4v2"/><circle cx="12" cy="7" r="4"/></symbol>
+    <symbol id="i-play" viewBox="0 0 24 24"><path d="M6 3.8c0-.8.9-1.3 1.6-.9l12.2 8.2c.6.4.6 1.4 0 1.8L7.6 21.1c-.7.4-1.6-.1-1.6-.9z" fill="currentColor" stroke="none"/></symbol>
+    <symbol id="i-stop" viewBox="0 0 24 24"><rect x="5" y="5" width="14" height="14" rx="2" fill="currentColor" stroke="none"/></symbol>
+    <symbol id="i-download" viewBox="0 0 24 24"><path d="M21 15v4a2 2 0 0 1-2 2H5a2 2 0 0 1-2-2v-4"/><path d="m7 10 5 5 5-5"/><path d="M12 15V3"/></symbol>
+    <symbol id="i-folder" viewBox="0 0 24 24"><path d="M22 19a2 2 0 0 1-2 2H4a2 2 0 0 1-2-2V5a2 2 0 0 1 2-2h5l2 3h9a2 2 0 0 1 2 2z"/></symbol>
+    <symbol id="i-trash" viewBox="0 0 24 24"><path d="M3 6h18"/><path d="M19 6v14a2 2 0 0 1-2 2H7a2 2 0 0 1-2-2V6"/><path d="M8 6V4a2 2 0 0 1 2-2h4a2 2 0 0 1 2 2v2"/><path d="M10 11v6M14 11v6"/></symbol>
+    <symbol id="i-plus" viewBox="0 0 24 24"><path d="M12 5v14M5 12h14"/></symbol>
+    <symbol id="i-search" viewBox="0 0 24 24"><circle cx="11" cy="11" r="7"/><path d="m21 21-4.3-4.3"/></symbol>
+    <symbol id="i-refresh" viewBox="0 0 24 24"><path d="M21 2v6h-6"/><path d="M3 12a9 9 0 0 1 15-6.7L21 8"/><path d="M3 22v-6h6"/><path d="M21 12a9 9 0 0 1-15 6.7L3 16"/></symbol>
+    <symbol id="i-monitor" viewBox="0 0 24 24"><rect x="2" y="3" width="20" height="14" rx="2"/><path d="M8 21h8M12 17v4"/></symbol>
+    <symbol id="i-cpu" viewBox="0 0 24 24"><rect x="4" y="4" width="16" height="16" rx="2"/><rect x="9" y="9" width="6" height="6"/><path d="M9 1v3M15 1v3M9 20v3M15 20v3M1 9h3M1 15h3M20 9h3M20 15h3"/></symbol>
+    <symbol id="i-coffee" viewBox="0 0 24 24"><path d="M18 8h1a4 4 0 0 1 0 8h-1"/><path d="M2 8h16v9a4 4 0 0 1-4 4H6a4 4 0 0 1-4-4z"/><path d="M6 1v3M10 1v3M14 1v3"/></symbol>
+    <symbol id="i-info" viewBox="0 0 24 24"><circle cx="12" cy="12" r="10"/><path d="M12 16v-4M12 8h.01"/></symbol>
+    <symbol id="i-external" viewBox="0 0 24 24"><path d="M18 13v6a2 2 0 0 1-2 2H5a2 2 0 0 1-2-2V8a2 2 0 0 1 2-2h6"/><path d="M15 3h6v6"/><path d="M10 14 21 3"/></symbol>
+    <symbol id="i-check" viewBox="0 0 24 24"><path d="m20 6-11 11-5-5"/></symbol>
+    <symbol id="i-alert" viewBox="0 0 24 24"><path d="M10.3 3.9 1.8 18a2 2 0 0 0 1.7 3h17a2 2 0 0 0 1.7-3L13.7 3.9a2 2 0 0 0-3.4 0z"/><path d="M12 9v4M12 17h.01"/></symbol>
+    <symbol id="i-x" viewBox="0 0 24 24"><path d="M18 6 6 18M6 6l12 12"/></symbol>
+    <symbol id="i-minus" viewBox="0 0 24 24"><path d="M5 12h14"/></symbol>
+    <symbol id="i-maximize" viewBox="0 0 24 24"><rect x="4" y="4" width="16" height="16" rx="1.5"/></symbol>
+    <symbol id="i-restore" viewBox="0 0 24 24"><rect x="8" y="8" width="12" height="12" rx="1.5"/><path d="M16 8V6a2 2 0 0 0-2-2H6a2 2 0 0 0-2 2v8a2 2 0 0 0 2 2h2"/></symbol>
+    <symbol id="i-chevron-down" viewBox="0 0 24 24"><path d="m6 9 6 6 6-6"/></symbol>
+    <symbol id="i-chevron-right" viewBox="0 0 24 24"><path d="m9 6 6 6-6 6"/></symbol>
+    <symbol id="i-copy" viewBox="0 0 24 24"><rect x="9" y="9" width="13" height="13" rx="2"/><path d="M5 15H4a2 2 0 0 1-2-2V4a2 2 0 0 1 2-2h9a2 2 0 0 1 2 2v1"/></symbol>
+    <symbol id="i-terminal" viewBox="0 0 24 24"><path d="m4 17 6-6-6-6"/><path d="M12 19h8"/></symbol>
+    <symbol id="i-sparkles" viewBox="0 0 24 24"><path d="m12 3 1.9 5.1L19 10l-5.1 1.9L12 17l-1.9-5.1L5 10l5.1-1.9z"/><path d="M19 15l.9 2.1L22 18l-2.1.9L19 21l-.9-2.1L16 18l2.1-.9z"/></symbol>
+    <symbol id="i-shield" viewBox="0 0 24 24"><path d="M12 22s8-4 8-10V5l-8-3-8 3v7c0 6 8 10 8 10z"/><path d="m9 12 2 2 4-4"/></symbol>
+    <symbol id="i-globe" viewBox="0 0 24 24"><circle cx="12" cy="12" r="10"/><path d="M2 12h20"/><path d="M12 2a15.3 15.3 0 0 1 4 10 15.3 15.3 0 0 1-4 10 15.3 15.3 0 0 1-4-10 15.3 15.3 0 0 1 4-10z"/></symbol>
+    <symbol id="i-flag-es" viewBox="0 0 24 16">
+      <rect width="24" height="16" rx="2" fill="#C60B1E"/>
+      <rect y="4" width="24" height="8" fill="#FFC400"/>
+      <rect x="6" y="6.4" width="3.2" height="3.2" rx="0.5" fill="#C60B1E"/>
+      <rect width="24" height="16" rx="2" fill="none" stroke="rgba(0,0,0,0.18)" stroke-width="1"/>
+    </symbol>
+    <symbol id="i-flag-us" viewBox="0 0 24 16">
+      <rect width="24" height="16" rx="2" fill="#FFFFFF"/>
+      <g fill="#B22234">
+        <rect width="24" height="1.23" y="0"/>
+        <rect width="24" height="1.23" y="2.46"/>
+        <rect width="24" height="1.23" y="4.92"/>
+        <rect width="24" height="1.23" y="7.38"/>
+        <rect width="24" height="1.23" y="9.85"/>
+        <rect width="24" height="1.23" y="12.31"/>
+        <rect width="24" height="1.23" y="14.77"/>
+      </g>
+      <rect width="10" height="8.62" fill="#3C3B6E"/>
+      <g fill="#FFFFFF">
+        <circle cx="1.6" cy="1.5" r="0.55"/><circle cx="3.6" cy="1.5" r="0.55"/><circle cx="5.6" cy="1.5" r="0.55"/><circle cx="7.6" cy="1.5" r="0.55"/>
+        <circle cx="2.6" cy="3" r="0.55"/><circle cx="4.6" cy="3" r="0.55"/><circle cx="6.6" cy="3" r="0.55"/><circle cx="8.6" cy="3" r="0.55"/>
+        <circle cx="1.6" cy="4.5" r="0.55"/><circle cx="3.6" cy="4.5" r="0.55"/><circle cx="5.6" cy="4.5" r="0.55"/><circle cx="7.6" cy="4.5" r="0.55"/>
+        <circle cx="2.6" cy="6" r="0.55"/><circle cx="4.6" cy="6" r="0.55"/><circle cx="6.6" cy="6" r="0.55"/><circle cx="8.6" cy="6" r="0.55"/>
+      </g>
+      <rect width="24" height="16" rx="2" fill="none" stroke="rgba(0,0,0,0.18)" stroke-width="1"/>
+    </symbol>
+    <symbol id="i-message" viewBox="0 0 24 24"><path d="M21 15a2 2 0 0 1-2 2H7l-4 4V5a2 2 0 0 1 2-2h14a2 2 0 0 1 2 2z"/></symbol>
+    <symbol id="i-form" viewBox="0 0 24 24"><rect x="4" y="3" width="16" height="18" rx="2"/><path d="M8 8h8M8 12h8M8 16h5"/></symbol>
+    <symbol id="i-edit" viewBox="0 0 24 24"><path d="M11 4H4a2 2 0 0 0-2 2v14a2 2 0 0 0 2 2h14a2 2 0 0 0 2-2v-7"/><path d="M18.5 2.5a2.1 2.1 0 0 1 3 3L12 15l-4 1 1-4z"/></symbol>
+    <symbol id="i-clock" viewBox="0 0 24 24"><circle cx="12" cy="12" r="10"/><path d="M12 6v6l4 2"/></symbol>
+    <symbol id="i-drive" viewBox="0 0 24 24"><path d="M22 12H2"/><path d="M5.5 5h13l3.5 7v5a2 2 0 0 1-2 2H4a2 2 0 0 1-2-2v-5z"/><path d="M6 16h.01M10 16h.01"/></symbol>
+    <symbol id="i-arrow-right" viewBox="0 0 24 24"><path d="M5 12h14M13 6l6 6-6 6"/></symbol>
+    <symbol id="i-logout" viewBox="0 0 24 24"><path d="M9 21H5a2 2 0 0 1-2-2V5a2 2 0 0 1 2-2h4"/><path d="m16 17 5-5-5-5"/><path d="M21 12H9"/></symbol>
+    <symbol id="i-dice" viewBox="0 0 24 24"><rect x="3" y="3" width="18" height="18" rx="4"/><path d="M8 8h.01M16 8h.01M12 12h.01M8 16h.01M16 16h.01"/></symbol>
+    <symbol id="i-wifi-off" viewBox="0 0 24 24"><path d="m1 1 22 22"/><path d="M16.7 7.3A11 11 0 0 1 21 12M5 12a11 11 0 0 1 3-2.2"/><path d="M8.5 15.5a6 6 0 0 1 7 0"/><path d="M12 20h.01"/></symbol>
+    <symbol id="i-archive" viewBox="0 0 24 24"><rect x="2" y="4" width="20" height="5" rx="1.5"/><path d="M4 9v9a2 2 0 0 0 2 2h12a2 2 0 0 0 2-2V9"/><path d="M10 13h4"/></symbol>
+    <symbol id="i-more" viewBox="0 0 24 24"><circle cx="5" cy="12" r="1.6" fill="currentColor" stroke="none"/><circle cx="12" cy="12" r="1.6" fill="currentColor" stroke="none"/><circle cx="19" cy="12" r="1.6" fill="currentColor" stroke="none"/></symbol>
+    <symbol id="i-chevron-left" viewBox="0 0 24 24"><path d="m15 18-6-6 6-6"/></symbol>
+    <symbol id="i-image" viewBox="0 0 24 24"><rect x="3" y="3" width="18" height="18" rx="2"/><circle cx="9" cy="9" r="2"/><path d="m21 15-5-5L5 21"/></symbol>
+  </svg>
+
+  <div id="app" data-theme="violet">
+    <header class="titlebar">
+      <div class="titlebar-brand">
+        <span class="brand-mark">N</span>
+        <span class="brand-name">NEXY</span>
+        <span class="brand-sub">LAUNCHER</span>
+      </div>
+      <div class="titlebar-drag"></div>
+      <div class="titlebar-status" id="titlebar-status"></div>
+      <div class="window-controls">
+        <button id="btn-min" class="win-btn" title="Minimizar" aria-label="Minimizar"><svg class="icon"><use href="#i-minus"></use></svg></button>
+        <button id="btn-max" class="win-btn" title="Maximizar" aria-label="Maximizar"><svg class="icon" id="icon-max"><use href="#i-maximize"></use></svg></button>
+        <button id="btn-close" class="win-btn win-close" title="Cerrar" aria-label="Cerrar"><svg class="icon"><use href="#i-x"></use></svg></button>
+      </div>
+    </header>
+
+    <div class="boot-screen" id="boot-screen">
+      <div class="boot-lockup">
+        <span class="boot-mark">N</span>
+        <div class="boot-copy">
+          <strong>NEXYLAUNCHER</strong>
+          <small>Preparando tu launcher…</small>
+        </div>
+        <span class="boot-bar"></span>
+      </div>
+    </div>
+
+    <section id="screen-login" class="screen screen-login active">
+      <div class="login-visual">
+        <div class="panorama"></div>
+        <div class="login-visual-shade"></div>
+        <div class="login-brand">
+          <div class="logo-lockup">
+            <span class="logo-cube"><i>N</i></span>
+            <div>
+              <h1>NEXY<span>LAUNCHER</span></h1>
+              <p class="logo-version">VERSIÓN 1.0</p>
+            </div>
+          </div>
+          <p class="login-tagline">Tu Minecraft. Sin cuentas premium, sin complicaciones.</p>
+          <ul class="login-features">
+            <li><span class="feature-icon"><svg class="icon"><use href="#i-download"></use></svg></span><div><strong>Descarga automática</strong><small>Versiones, recursos y librerías desde Mojang.</small></div></li>
+            <li><span class="feature-icon"><svg class="icon"><use href="#i-box"></use></svg></span><div><strong>Mods bajo control</strong><small>Activa, desactiva y organiza tus .jar.</small></div></li>
+            <li><span class="feature-icon"><svg class="icon"><use href="#i-shield"></use></svg></span><div><strong>Cuentas offline</strong><small>Tus perfiles se guardan en este equipo.</small></div></li>
+          </ul>
+        </div>
+        <div class="login-visual-foot">
+          <span>© 2026 NexyLauncher</span>
+          <span class="dot-sep"></span>
+          <span>No afiliado a Mojang Studios</span>
+        </div>
+      </div>
+
+      <div class="login-panel">
+        <div class="lang-switch lang-switch-login" role="group" aria-label="Cambiar idioma">
+          <button class="lang-btn active" data-lang="es" title="Español" aria-label="Español" aria-pressed="true">
+            <svg class="lang-flag" aria-hidden="true" focusable="false"><use href="#i-flag-es"></use></svg>
+          </button>
+          <button class="lang-btn" data-lang="en" title="English" aria-label="English" aria-pressed="false">
+            <svg class="lang-flag" aria-hidden="true" focusable="false"><use href="#i-flag-us"></use></svg>
+          </button>
+        </div>
+        <div class="login-card">
+          <span class="eyebrow">BIENVENIDO A NEXY</span>
+          <h2>Entra a jugar</h2>
+          <p class="login-desc">Elige un nombre de jugador. No necesitas cuenta de Microsoft ni conexión a internet para usar el launcher.</p>
+
+          <form id="login-form" novalidate>
+            <label class="field-label" for="login-username">Nombre de jugador</label>
+            <div class="input-shell">
+              <svg class="icon input-icon"><use href="#i-user"></use></svg>
+              <input id="login-username" name="username" type="text" maxlength="16" placeholder="Ej. Steve" autocomplete="off" spellcheck="false" autofocus>
+              <button type="button" id="btn-random-name" class="input-action" title="Generar un nombre aleatorio" aria-label="Generar un nombre aleatorio"><svg class="icon"><use href="#i-dice"></use></svg></button>
+            </div>
+            <p class="form-error" id="login-error" hidden></p>
+            <button type="submit" class="btn btn-primary btn-lg w-full" id="login-submit">
+              Entrar al launcher
+              <svg class="icon"><use href="#i-arrow-right"></use></svg>
+            </button>
+          </form>
+
+          <div class="saved-accounts-wrap" id="saved-accounts-wrap" hidden>
+            <div class="saved-head">
+              <span>Perfiles guardados</span>
+              <span class="saved-hint">Haz clic para entrar</span>
+            </div>
+            <div class="saved-accounts" id="saved-accounts"></div>
+          </div>
+
+          <div class="offline-note">
+            <svg class="icon"><use href="#i-info"></use></svg>
+            <p><strong>Cuentas offline.</strong> Servidores con verificación premium pueden rechazar tu conexión. Es normal: no estás usando una cuenta de Microsoft.</p>
+          </div>
+        </div>
+        <div class="login-foot">
+          <span>Los datos se guardan solo en tu equipo.</span>
+          <button class="link-btn" data-external="https://help.minecraft.net/hc/es">Ayuda de Minecraft <svg class="icon"><use href="#i-external"></use></svg></button>
+        </div>
+      </div>
+    </section>
+
+    <section id="screen-app" class="screen screen-app">
+      <aside class="rail">
+        <div class="rail-logo" title="NexyLauncher 1.0">N</div>
+        <nav class="rail-nav" aria-label="Navegación principal">
+          <button class="rail-btn active" data-page="home" data-tip="Inicio" aria-label="Inicio"><svg class="icon"><use href="#i-home"></use></svg></button>
+          <button class="rail-btn" data-page="instances" data-tip="Instancias" aria-label="Instancias"><svg class="icon"><use href="#i-grid"></use></svg></button>
+          <button class="rail-btn" data-page="mods" data-tip="Mods" aria-label="Mods"><svg class="icon"><use href="#i-box"></use></svg></button>
+          <button class="rail-btn" data-page="servers" data-tip="Servidores" aria-label="Servidores"><svg class="icon"><use href="#i-server"></use></svg></button>
+          <button class="rail-btn" data-page="content" data-tip="Contenido" aria-label="Contenido"><svg class="icon"><use href="#i-archive"></use></svg></button>
+          <button class="rail-btn" data-page="ai" data-tip="Asistente" aria-label="Asistente"><svg class="icon"><use href="#i-sparkles"></use></svg></button>
+          <button class="rail-btn" data-page="settings" data-tip="Ajustes" aria-label="Ajustes"><svg class="icon"><use href="#i-settings"></use></svg></button>
+        </nav>
+        <div class="rail-bottom">
+          <button class="rail-account" id="btn-account-rail" title="Gestionar cuenta" aria-label="Gestionar cuenta">
+            <span class="avatar avatar-rail" id="rail-avatar"></span>
+            <span class="rail-account-dot"></span>
+          </button>
+        </div>
+      </aside>
+
+      <div class="workbench">
+        <header class="topbar">
+          <div class="page-heading">
+            <span class="eyebrow" id="page-eyebrow">PANEL PRINCIPAL</span>
+            <h1 id="page-title">Inicio</h1>
+          </div>
+          <div class="topbar-actions">
+            <button id="session-chip" class="pill pill-live session-chip" hidden title="Ver estado del lanzamiento">
+              <span class="dot"></span><span id="session-chip-text">Jugando</span>
+            </button>
+            <div class="lang-switch" role="group" aria-label="Cambiar idioma">
+              <button class="lang-btn active" data-lang="es" title="Español" aria-label="Español" aria-pressed="true">
+                <svg class="lang-flag" aria-hidden="true" focusable="false"><use href="#i-flag-es"></use></svg>
+              </button>
+              <button class="lang-btn" data-lang="en" title="English" aria-label="English" aria-pressed="false">
+                <svg class="lang-flag" aria-hidden="true" focusable="false"><use href="#i-flag-us"></use></svg>
+              </button>
+            </div>
+            <div class="status-chip" id="java-chip" title="Java detectado">
+              <svg class="icon"><use href="#i-coffee"></use></svg>
+              <span id="java-chip-text">Detectando Java…</span>
+            </div>
+            <button class="icon-btn" id="btn-top-console" title="Abrir consola" aria-label="Abrir consola"><svg class="icon"><use href="#i-terminal"></use></svg></button>
+            <button class="user-chip" id="btn-account-top" title="Gestionar cuenta">
+              <span class="avatar avatar-sm" id="topbar-avatar"></span>
+              <span class="user-chip-name" id="topbar-username">Invitado</span>
+              <svg class="icon chevron"><use href="#i-chevron-down"></use></svg>
+            </button>
+          </div>
+        </header>
+
+        <main class="pages" id="pages">
+          <section id="page-home" class="page active">
+            <div class="update-banner" id="update-banner" hidden>
+              <span class="update-banner-icon"><svg class="icon"><use href="#i-download"></use></svg></span>
+              <div class="update-banner-copy">
+                <strong>Nueva versión disponible: <span id="update-banner-version">NexyLauncher</span></strong>
+                <p id="update-banner-notes">Descarga la nueva versión para seguir al día.</p>
+              </div>
+              <div class="update-banner-actions">
+                <button class="btn btn-primary btn-sm" id="btn-update-download"><svg class="icon"><use href="#i-download"></use></svg>Descargar</button>
+                <button class="btn btn-ghost btn-sm" id="btn-update-later">Más tarde</button>
+              </div>
+            </div>
+            <div class="home-layout">
+              <div class="home-primary">
+                <article class="hero">
+                  <div class="hero-bg"></div>
+                  <div class="hero-shade"></div>
+                  <div class="hero-inner">
+                    <div class="hero-head">
+                      <div class="profile-pill">
+                        <span class="avatar avatar-md" id="hero-avatar"></span>
+                        <span class="profile-pill-text"><small>JUGANDO COMO</small><strong id="hero-username">Jugador</strong></span>
+                        <span class="badge badge-soft">Cuentas offline</span>
+                      </div>
+                      <div class="hero-badges">
+                        <span class="pill glass" id="pill-latest"><svg class="icon"><use href="#i-sparkles"></use></svg><span>—</span></span>
+                        <span class="pill glass" id="pill-network"><span class="dot"></span><span>En línea</span></span>
+                      </div>
+                    </div>
+                    <div class="hero-body">
+                      <div class="hero-text">
+                        <span class="eyebrow">MINECRAFT · JAVA EDITION</span>
+                        <h2>Tu mundo.<br><em>Sin límites.</em></h2>
+                        <p id="hero-subtitle">Elige una versión y pulsa jugar. Descargamos automáticamente todo lo necesario.</p>
+                        <div class="hero-meta">
+                          <span><svg class="icon"><use href="#i-clock"></use></svg><span id="hero-meta-type">—</span></span>
+                          <span><svg class="icon"><use href="#i-drive"></use></svg><span id="hero-meta-status">—</span></span>
+                          <span><svg class="icon"><use href="#i-coffee"></use></svg><span id="hero-meta-java">Java automático</span></span>
+                        </div>
+                      </div>
+                      <div class="launch-card">
+                        <button class="instance-chip" id="hero-instance" data-goto="instances" title="Cambiar de instancia">
+                          <span class="instance-chip-icon"><svg class="icon"><use href="#i-grid"></use></svg></span>
+                          <span class="instance-chip-text"><small>INSTANCIA</small><strong id="hero-instance-name">Principal</strong></span>
+                          <svg class="icon chevron"><use href="#i-chevron-right"></use></svg>
+                        </button>
+                        <label class="launch-label" for="version-select">VERSIÓN DE MINECRAFT</label>
+                        <div class="select-wrap">
+                          <select id="version-select" class="select"></select>
+                          <svg class="icon select-caret"><use href="#i-chevron-down"></use></svg>
+                        </div>
+                        <div class="launch-split">
+                          <div class="launch-field">
+                            <label class="launch-label" for="loader-select">CARGADOR</label>
+                            <div class="select-wrap">
+                              <select id="loader-select" class="select">
+                                <option value="vanilla">Vanilla</option>
+                                <option value="fabric">Fabric</option>
+                                <option value="forge">Forge</option>
+                                <option value="neoforge">NeoForge</option>
+                                <option value="quilt">Quilt</option>
+                              </select>
+                              <svg class="icon select-caret"><use href="#i-chevron-down"></use></svg>
+                            </div>
+                          </div>
+                          <div class="launch-field" id="loader-version-field">
+                            <label class="launch-label" for="loader-version-select">VERSIÓN DEL CARGADOR</label>
+                            <div class="select-wrap">
+                              <select id="loader-version-select" class="select"></select>
+                              <svg class="icon select-caret"><use href="#i-chevron-down"></use></svg>
+                            </div>
+                          </div>
+                        </div>
+                        <p class="loader-hint" id="loader-hint">Solo Minecraft Vanilla. Elige un cargador para usar mods.</p>
+                        <button id="btn-play" class="btn-play">
+                          <span class="btn-play-icon"><svg class="icon"><use href="#i-play"></use></svg></span>
+                          <span class="btn-play-text"><strong>JUGAR</strong><small id="play-sub">Minecraft</small></span>
+                        </button>
+                        <div class="quick-actions">
+                          <button id="btn-play-server" class="mini-action" data-goto="servers"><svg class="icon"><use href="#i-server"></use></svg>Servidor</button>
+                          <button id="btn-open-game-folder" class="mini-action"><svg class="icon"><use href="#i-folder"></use></svg>Carpeta</button>
+                        </div>
+                      </div>
+                    </div>
+                  </div>
+                </article>
+
+                <div class="stat-grid">
+                  <article class="stat-card">
+                    <span class="stat-icon"><svg class="icon"><use href="#i-cpu"></use></svg></span>
+                    <div><small>Memoria</small><strong id="stat-memory">—</strong><span id="stat-memory-sub">—</span></div>
+                  </article>
+                  <article class="stat-card">
+                    <span class="stat-icon"><svg class="icon"><use href="#i-coffee"></use></svg></span>
+                    <div><small>Java</small><strong id="stat-java">—</strong><span id="stat-java-sub">Detectando…</span></div>
+                  </article>
+                  <article class="stat-card">
+                    <span class="stat-icon"><svg class="icon"><use href="#i-box"></use></svg></span>
+                    <div><small>Mods</small><strong id="stat-mods">0</strong><span id="stat-mods-sub">En la carpeta mods</span></div>
+                  </article>
+                </div>
+
+                <section class="panel">
+                  <div class="panel-head">
+                    <div><h3>Listo para jugar</h3><p>Versiones instaladas en este equipo</p></div>
+                  </div>
+                  <div id="installed-list" class="installed-list"></div>
+                </section>
+              </div>
+
+              <aside class="home-secondary">
+                <section class="panel quick-server-panel">
+                  <div class="panel-head">
+                    <div><h3>Juego rápido</h3><p>Entra directamente a un servidor</p></div>
+                    <span class="panel-icon"><svg class="icon"><use href="#i-globe"></use></svg></span>
+                  </div>
+                  <div id="quick-server-empty" class="empty-inline">
+                    <p>Aún no tienes servidores guardados.</p>
+                    <button class="btn btn-ghost btn-sm" data-goto="servers"><svg class="icon"><use href="#i-plus"></use></svg>Añadir servidor</button>
+                  </div>
+                  <div id="quick-server-active" hidden>
+                    <label class="field-label" for="quick-server-select">Servidor</label>
+                    <div class="select-wrap">
+                      <select id="quick-server-select" class="select"></select>
+                      <svg class="icon select-caret"><use href="#i-chevron-down"></use></svg>
+                    </div>
+                    <button id="btn-quick-connect" class="btn btn-secondary w-full"><svg class="icon"><use href="#i-play"></use></svg>Jugar en el servidor</button>
+                  </div>
+                </section>
+
+                <section class="panel news-panel">
+                  <div class="panel-head">
+                    <div><h3>Novedades</h3><p>Información y consejos</p></div>
+                  </div>
+                  <div id="news-list" class="news-list"></div>
+                </section>
+
+                <section class="panel community-panel">
+                  <div class="panel-head">
+                    <div><h3>Comunidad</h3><p>Ayuda y feedback</p></div>
+                    <span class="panel-icon"><svg class="icon"><use href="#i-message"></use></svg></span>
+                  </div>
+                  <div class="community-actions">
+                    <button class="btn btn-ghost btn-sm" disabled title="El servidor de Discord estará disponible próximamente"><svg class="icon"><use href="#i-message"></use></svg>Discord · Próximamente</button>
+                    <button class="btn btn-ghost btn-sm" data-feedback="discord-user" title="Copiar el usuario de Discord para enviar un mensaje directo"><svg class="icon"><use href="#i-message"></use></svg>MD: zombigamer55</button>
+                    <button class="btn btn-ghost btn-sm" data-feedback="form"><svg class="icon"><use href="#i-form"></use></svg>Formulario</button>
+                    <button class="btn btn-ghost btn-sm" data-feedback="diagnostics"><svg class="icon"><use href="#i-copy"></use></svg>Diagnóstico</button>
+                    <button class="btn btn-ghost btn-sm" data-feedback="logs"><svg class="icon"><use href="#i-folder"></use></svg>Logs</button>
+                  </div>
+                </section>
+
+                <section class="tip-card">
+                  <span class="tip-icon"><svg class="icon"><use href="#i-shield"></use></svg></span>
+                  <div><strong>Cuentas offline</strong><p>Sin telemetría ni inicio de sesión externo. Tus perfiles y ajustes se quedan en tu PC.</p></div>
+                </section>
+              </aside>
+            </div>
+          </section>
+
+          <section id="page-instances" class="page">
+            <div class="page-inner">
+              <div id="instances-list-view">
+                <div class="page-head-row">
+                  <div>
+                    <h2>Instancias</h2>
+                    <p>Cada instancia guarda sus propias versiones, mods, mundos, recursos y ajustes de Minecraft. Cambia de instancia sin mezclar nada.</p>
+                  </div>
+                  <div class="head-actions">
+                    <button id="btn-open-instances" class="btn btn-ghost"><svg class="icon"><use href="#i-folder"></use></svg>Abrir carpeta</button>
+                    <button id="btn-import-instance" class="btn btn-ghost"><svg class="icon"><use href="#i-archive"></use></svg>Importar</button>
+                    <button id="btn-new-instance" class="btn btn-primary"><svg class="icon"><use href="#i-plus"></use></svg>Nueva instancia</button>
+                  </div>
+                </div>
+
+                <div class="banner instance-banner">
+                  <span class="banner-icon"><svg class="icon"><use href="#i-grid"></use></svg></span>
+                  <div>
+                    <strong>Instancia activa: <span id="active-instance-name">—</span></strong>
+                    <p id="active-instance-path">—</p>
+                    <p id="active-instance-assignment">—</p>
+                  </div>
+                </div>
+
+                <div id="instances-grid" class="instances-grid"></div>
+                <div id="instances-empty" class="empty-state" hidden>
+                  <span class="empty-icon"><svg class="icon"><use href="#i-grid"></use></svg></span>
+                  <h3>No hay instancias</h3>
+                  <p>Crea una instancia para separar versiones, mods y mundos.</p>
+                  <button class="btn btn-primary" id="btn-new-instance-empty"><svg class="icon"><use href="#i-plus"></use></svg>Nueva instancia</button>
+                </div>
+              </div>
+
+              <div id="instance-detail" class="instance-detail" hidden></div>
+            </div>
+          </section>
+
+          <section id="page-mods" class="page">
+            <div class="page-inner">
+              <div class="page-head-row">
+                <div><h2>Mods</h2><p>Gestiona tus archivos y descubre mods compatibles sin salir del launcher.</p></div>
+                <div class="head-actions">
+                  <button id="btn-open-mods" class="btn btn-ghost"><svg class="icon"><use href="#i-folder"></use></svg>Abrir carpeta</button>
+                  <button id="btn-add-mods" class="btn btn-primary"><svg class="icon"><use href="#i-plus"></use></svg>Añadir mods</button>
+                </div>
+              </div>
+
+              <div class="banner">
+                <span class="banner-icon"><svg class="icon"><use href="#i-sparkles"></use></svg></span>
+                <div><strong>Mods con instalación integrada</strong><p>Busca en <strong>Modrinth</strong> (gratis y sin cuenta) o en <strong>CurseForge</strong> (requiere una API key opcional). El launcher descarga el archivo y verifica su hash cuando está disponible. En Modrinth, las dependencias obligatorias se instalan automáticamente. Elige un cargador (Fabric, Forge, NeoForge o Quilt) en Inicio para jugar con ellos.</p></div>
+              </div>
+
+              <div class="segmented" id="mods-tabs" role="tablist">
+                <button class="seg-btn active" data-mtab="installed">Instalados <span class="seg-count" id="count-mods">0</span></button>
+                <button class="seg-btn" data-mtab="browse">Descubrir</button>
+              </div>
+
+              <div id="mods-installed-view">
+                <div class="toolbar">
+                  <div class="search-box"><svg class="icon"><use href="#i-search"></use></svg><input id="mods-search" type="search" placeholder="Buscar mod instalado…" autocomplete="off"></div>
+                  <span class="toolbar-note" id="mods-summary">—</span>
+                </div>
+
+                <section class="updates-panel" id="mods-updates-panel">
+                  <div class="updates-head">
+                    <span class="updates-icon"><svg class="icon"><use href="#i-refresh"></use></svg></span>
+                    <div class="updates-copy">
+                      <strong>Actualizaciones</strong>
+                      <p id="mods-updates-summary">Comprueba si hay versiones nuevas compatibles con esta instancia.</p>
+                    </div>
+                    <div class="updates-actions">
+                      <button id="btn-update-all" class="btn btn-primary btn-sm" hidden><svg class="icon"><use href="#i-download"></use></svg>Actualizar seleccionados</button>
+                      <button id="btn-check-updates" class="btn btn-secondary btn-sm"><svg class="icon"><use href="#i-refresh"></use></svg>Buscar actualizaciones</button>
+                    </div>
+                  </div>
+                  <div id="mods-updates-list" class="updates-list" hidden></div>
+                </section>
+
+                <div class="dropzone" id="mods-dropzone">
+                  <span class="dropzone-icon"><svg class="icon"><use href="#i-download"></use></svg></span>
+                  <div><strong>Arrastra tus mods aquí</strong><p>o <button class="link-btn" id="btn-add-mods-2">selecciona archivos .jar</button> desde tu equipo</p></div>
+                </div>
+
+                <div id="mods-list" class="mods-grid"></div>
+                <div id="mods-empty" class="empty-state" hidden>
+                  <span class="empty-icon"><svg class="icon"><use href="#i-box"></use></svg></span>
+                  <h3>Todavía no hay mods</h3>
+                  <p>Añade archivos .jar o descubre mods compatibles desde la pestaña Descubrir.</p>
+                  <button class="btn btn-primary" data-mtab-jump="browse"><svg class="icon"><use href="#i-search"></use></svg>Descubrir mods</button>
+                </div>
+              </div>
+
+              <div id="mods-browse-view" hidden>
+                <div class="toolbar browse-toolbar">
+                  <div class="search-box grow"><svg class="icon"><use href="#i-search"></use></svg><input id="mod-browse-search" type="search" placeholder="Buscar mods: sodium, jei, create…" autocomplete="off"></div>
+                  <div class="select-wrap toolbar-select">
+                    <select id="mod-provider" class="select select-sm">
+                      <option value="modrinth">Modrinth</option>
+                      <option value="curseforge">CurseForge</option>
+                    </select>
+                    <svg class="icon select-caret"><use href="#i-chevron-down"></use></svg>
+                  </div>
+                  <div class="select-wrap toolbar-select">
+                    <select id="mod-game-version" class="select select-sm"></select>
+                    <svg class="icon select-caret"><use href="#i-chevron-down"></use></svg>
+                  </div>
+                  <div class="select-wrap toolbar-select">
+                    <select id="mod-loader-filter" class="select select-sm">
+                      <option value="">Todos los cargadores</option>
+                      <option value="fabric">Fabric</option>
+                      <option value="forge">Forge</option>
+                      <option value="neoforge">NeoForge</option>
+                      <option value="quilt">Quilt</option>
+                    </select>
+                    <svg class="icon select-caret"><use href="#i-chevron-down"></use></svg>
+                  </div>
+                  <button id="btn-mod-search" class="btn btn-secondary"><svg class="icon"><use href="#i-search"></use></svg>Buscar</button>
+                </div>
+                <p class="browse-note" id="mod-browse-note">Elige una versión y un cargador para ver solo mods compatibles.</p>
+
+                <div id="mod-browse-list" class="mod-browse-grid"></div>
+                <div id="mod-browse-empty" class="empty-state" hidden>
+                  <span class="empty-icon"><svg class="icon"><use href="#i-search"></use></svg></span>
+                  <h3 id="mod-browse-empty-title">Busca tu próximo mod</h3>
+                  <p id="mod-browse-empty-text">Escribe un nombre o explora los mods más descargados de la versión seleccionada.</p>
+                </div>
+                <div class="browse-pager" id="mods-pager" hidden>
+                  <button id="mods-prev" class="btn btn-ghost btn-sm"><svg class="icon"><use href="#i-chevron-right"></use></svg>Anterior</button>
+                  <span id="mods-page">Página 1</span>
+                  <button id="mods-next" class="btn btn-ghost btn-sm">Siguiente<svg class="icon"><use href="#i-chevron-right"></use></svg></button>
+                </div>
+              </div>
+            </div>
+          </section>
+
+          <section id="page-servers" class="page">
+            <div class="page-inner">
+              <div class="page-head-row">
+                <div><h2>Servidores</h2><p>Guarda tus servidores favoritos y entra con un solo clic.</p></div>
+                <div class="head-actions">
+                  <button id="btn-refresh-servers" class="btn btn-ghost"><svg class="icon"><use href="#i-refresh"></use></svg>Comprobar estado</button>
+                  <button id="btn-add-server" class="btn btn-primary"><svg class="icon"><use href="#i-plus"></use></svg>Añadir servidor</button>
+                </div>
+              </div>
+
+              <div class="banner banner-warn">
+                <span class="banner-icon"><svg class="icon"><use href="#i-wifi-off"></use></svg></span>
+                <div><strong>Recuerda: usas cuentas offline</strong><p>Los servidores con <code>online-mode=true</code> no permitirán tu entrada. Busca servidores "cracked" u offline, o monta uno propio. El launcher usa el nombre que elegiste como identidad.</p></div>
+              </div>
+
+              <div id="servers-list" class="servers-grid"></div>
+              <div id="servers-empty" class="empty-state" hidden>
+                <span class="empty-icon"><svg class="icon"><use href="#i-server"></use></svg></span>
+                <h3>Tu lista de servidores está vacía</h3>
+                <p>Añade una dirección para guardarla y poder conectarte directamente desde el inicio.</p>
+                <button class="btn btn-primary" id="btn-add-server-empty"><svg class="icon"><use href="#i-plus"></use></svg>Añadir mi primer servidor</button>
+              </div>
+            </div>
+          </section>
+
+          <section id="page-content" class="page">
+            <div class="page-inner">
+              <div class="page-head-row">
+                <div><h2>Contenido</h2><p>Mundos, resource packs, shaders y capturas de la instancia activa.</p></div>
+                <div class="head-actions" id="content-actions"></div>
+              </div>
+
+              <div class="segmented" id="content-tabs" role="tablist" aria-label="Tipo de contenido">
+                <button class="seg-btn active" data-ctab="worlds" role="tab">Mundos</button>
+                <button class="seg-btn" data-ctab="resourcepacks" role="tab">Resource packs</button>
+                <button class="seg-btn" data-ctab="shaderpacks" role="tab">Shaders</button>
+                <button class="seg-btn" data-ctab="screenshots" role="tab">Capturas</button>
+              </div>
+
+              <div id="content-list"></div>
+            </div>
+          </section>
+
+          <section id="page-ai" class="page">
+            <div class="page-inner ai-inner">
+              <div class="page-head-row">
+                <div><h2>Asistente</h2><p>Pregunta lo que quieras sobre tu launcher, tus mods o un crash. Usa tu propia API key.</p></div>
+                <div class="head-actions">
+                  <span class="ai-model-chip" id="ai-model-chip">Sin configurar</span>
+                  <button class="btn btn-ghost btn-sm" id="btn-ai-undo" hidden><svg class="icon"><use href="#i-refresh"></use></svg>Deshacer arreglo</button>
+                  <button class="btn btn-ghost btn-sm" id="btn-ai-clear"><svg class="icon"><use href="#i-trash"></use></svg>Nueva conversación</button>
+                  <button class="btn btn-ghost btn-sm" id="btn-ai-settings"><svg class="icon"><use href="#i-settings"></use></svg>Ajustes IA</button>
+                </div>
+              </div>
+
+              <div class="ai-shell panel">
+                <div class="ai-chat" id="ai-chat" aria-live="polite"></div>
+                <form class="ai-composer" id="ai-form">
+                  <div class="ai-composer-box">
+                    <textarea id="ai-input" rows="1" maxlength="4000" placeholder="Pregunta lo que quieras… Por ejemplo: ¿por qué crashea mi instancia?" spellcheck="false"></textarea>
+                    <button type="submit" class="btn btn-primary ai-send" id="btn-ai-send" aria-label="Enviar mensaje"><svg class="icon"><use href="#i-arrow-right"></use></svg></button>
+                  </div>
+                  <div class="ai-composer-foot">
+                    <label class="switch switch-mini"><input type="checkbox" id="ai-include-context" checked><span class="switch-track"></span></label>
+                    <span class="ai-foot-label">Incluir datos del launcher</span>
+                    <span class="ai-foot-spacer"></span>
+                    <span class="ai-foot-note" id="ai-foot-note">La API key se guarda solo en este equipo.</span>
+                  </div>
+                </form>
+              </div>
+            </div>
+          </section>
+
+          <section id="page-settings" class="page">
+            <div class="page-inner settings-inner">
+              <div class="page-head-row">
+                <div><h2>Ajustes</h2><p>Configura el rendimiento, Java, la apariencia y el almacenamiento del launcher.</p></div>
+                <span class="save-state" id="save-state"><span class="dot"></span>Guardado</span>
+              </div>
+
+              <div class="settings-grid">
+                <section class="panel settings-card">
+                  <div class="settings-card-head">
+                    <span class="settings-icon"><svg class="icon"><use href="#i-sparkles"></use></svg></span>
+                    <div><h3>Apariencia</h3><p>Hazlo tuyo</p></div>
+                  </div>
+                  <div class="setting-row">
+                    <div><strong>Tema de acento</strong><small>Color principal de botones y detalles</small></div>
+                    <div class="theme-picker" id="theme-picker">
+                      <button class="theme-dot theme-violet" data-theme="violet" title="Violeta" aria-label="Tema violeta"></button>
+                      <button class="theme-dot theme-emerald" data-theme="emerald" title="Esmeralda" aria-label="Tema esmeralda"></button>
+                      <button class="theme-dot theme-amber" data-theme="amber" title="Ámbar" aria-label="Tema ámbar"></button>
+                      <button class="theme-dot theme-azure" data-theme="azure" title="Azul" aria-label="Tema azul"></button>
+                      <button class="theme-dot theme-rose" data-theme="rose" title="Rosa" aria-label="Tema rosa"></button>
+                    </div>
+                  </div>
+                  <div class="setting-row">
+                    <div><strong>Iniciar sesión automáticamente</strong><small>Entra directo con tu último perfil al abrir el launcher</small></div>
+                    <label class="switch"><input type="checkbox" id="setting-autologin"><span class="switch-track"></span></label>
+                  </div>
+                  <div class="setting-row">
+                    <div><strong>Minimizar al iniciar el juego</strong><small>Libera la pantalla cuando Minecraft arranca</small></div>
+                    <label class="switch"><input type="checkbox" id="setting-minimize"><span class="switch-track"></span></label>
+                  </div>
+                </section>
+
+                <section class="panel settings-card">
+                  <div class="settings-card-head">
+                    <span class="settings-icon"><svg class="icon"><use href="#i-cpu"></use></svg></span>
+                    <div><h3>Rendimiento</h3><p>Memoria y argumentos de la JVM</p></div>
+                  </div>
+                  <div class="setting-block">
+                    <div class="setting-row">
+                      <div><strong>Memoria RAM asignada</strong><small id="ram-system">—</small></div>
+                      <span class="value-chip" id="ram-value">—</span>
+                    </div>
+                    <div class="range-row">
+                      <span>Mínimo</span>
+                      <input id="setting-min-mem" type="range" min="1" max="16" step="1" value="2">
+                      <output id="out-min-mem">2 GB</output>
+                    </div>
+                    <div class="range-row">
+                      <span>Máximo</span>
+                      <input id="setting-max-mem" type="range" min="1" max="16" step="1" value="4">
+                      <output id="out-max-mem">4 GB</output>
+                    </div>
+                    <p class="help-text" id="ram-help">Deja margen para el sistema. Más memoria no siempre significa más FPS.</p>
+                  </div>
+                  <div class="setting-block">
+                    <div class="setting-row">
+                      <div><strong>Argumentos JVM</strong><small>Opcional · se añaden al iniciar Minecraft</small></div>
+                      <button class="link-btn" id="btn-aikar">Flags recomendados</button>
+                    </div>
+                    <input id="setting-jvm-args" class="text-input mono" type="text" placeholder="-XX:+UseG1GC -XX:+ParallelRefProcEnabled" autocomplete="off" spellcheck="false">
+                  </div>
+                </section>
+
+                <section class="panel settings-card">
+                  <div class="settings-card-head">
+                    <span class="settings-icon"><svg class="icon"><use href="#i-coffee"></use></svg></span>
+                    <div><h3>Java</h3><p>Motor de ejecución de Minecraft</p></div>
+                  </div>
+                  <div class="setting-block">
+                    <label class="field-label" for="setting-java">Java para Minecraft</label>
+                    <div class="row-gap">
+                      <div class="select-wrap grow">
+                        <select id="setting-java" class="select"></select>
+                        <svg class="icon select-caret"><use href="#i-chevron-down"></use></svg>
+                      </div>
+                      <button id="btn-browse-java" class="btn btn-ghost">Examinar</button>
+                <button id="btn-install-java" class="btn btn-ghost">Instalar</button>
+                      <button id="btn-detect-java" class="icon-btn bordered" title="Volver a detectar" aria-label="Volver a detectar Java"><svg class="icon"><use href="#i-refresh"></use></svg></button>
+                    </div>
+                    <p class="help-text" id="java-help">En automático se elige la mejor versión disponible para cada versión de Minecraft.</p>
+                    <div id="java-list" class="java-list"></div>
+                  </div>
+                  <div class="setting-row">
+                    <div><strong>¿No tienes Java?</strong><small>Descarga Temurin (gratis y sin cuenta)</small></div>
+                    <button class="link-btn" data-external="https://adoptium.net/es/temurin/releases/?os=windows&arch=x64&package=jre&version=21">Abrir Adoptium <svg class="icon"><use href="#i-external"></use></svg></button>
+                  </div>
+                </section>
+
+                <section class="panel settings-card">
+                  <div class="settings-card-head">
+                    <span class="settings-icon"><svg class="icon"><use href="#i-monitor"></use></svg></span>
+                    <div><h3>Juego</h3><p>Ventana y lanzamiento</p></div>
+                  </div>
+                  <div class="setting-block">
+                    <div class="setting-row">
+                      <div><strong>Resolución de Minecraft</strong><small>Se aplica al iniciar el juego</small></div>
+                      <span class="value-chip" id="resolution-value">1280 × 720</span>
+                    </div>
+                    <div class="resolution-row">
+                      <div class="field-mini"><label for="setting-width">Ancho</label><input id="setting-width" type="number" min="640" max="7680" step="1"></div>
+                      <span class="resolution-x">×</span>
+                      <div class="field-mini"><label for="setting-height">Alto</label><input id="setting-height" type="number" min="480" max="4320" step="1"></div>
+                      <button class="link-btn" id="btn-reset-resolution">Restablecer</button>
+                    </div>
+                  </div>
+                  <div class="setting-row">
+                    <div><strong>Pantalla completa</strong><small>Inicia Minecraft en modo fullscreen</small></div>
+                    <label class="switch"><input type="checkbox" id="setting-fullscreen"><span class="switch-track"></span></label>
+                  </div>
+                  <div class="setting-block">
+                    <div class="setting-row">
+                      <div><strong>Argumentos del juego</strong><small>Opcional · parámetros adicionales para Minecraft</small></div>
+                    </div>
+                    <input id="setting-game-args" class="text-input mono" type="text" placeholder="--server ejemplo.net" autocomplete="off" spellcheck="false">
+                  </div>
+                </section>
+
+                <section class="panel settings-card">
+                  <div class="settings-card-head">
+                    <span class="settings-icon"><svg class="icon"><use href="#i-drive"></use></svg></span>
+                    <div><h3>Almacenamiento</h3><p>Dónde viven tus partidas y mods</p></div>
+                  </div>
+                  <div class="setting-block">
+                    <label class="field-label">Carpeta de la instancia activa</label>
+                    <div class="path-display" id="game-root-path" title="">—</div>
+                    <div class="row-gap">
+                      <button id="btn-change-root" class="btn btn-ghost"><svg class="icon"><use href="#i-folder"></use></svg>Cambiar carpeta</button>
+                      <button id="btn-open-root" class="btn btn-ghost"><svg class="icon"><use href="#i-external"></use></svg>Abrir</button>
+                      <button id="btn-open-logs" class="btn btn-ghost"><svg class="icon"><use href="#i-terminal"></use></svg>Ver logs</button>
+                      <button class="btn btn-ghost" data-goto="instances"><svg class="icon"><use href="#i-grid"></use></svg>Instancias</button>
+                    </div>
+                    <p class="help-text">Cambiar de carpeta no mueve los archivos existentes. Cada instancia tiene su propia carpeta de versiones, mods y mundos.</p>
+                  </div>
+                  <div class="setting-row">
+                    <div><strong>Mostrar snapshots</strong><small>Incluye versiones de desarrollo en el catálogo</small></div>
+                    <label class="switch"><input type="checkbox" id="setting-snapshots"><span class="switch-track"></span></label>
+                  </div>
+                </section>
+
+                <section class="panel settings-card">
+                  <div class="settings-card-head">
+                    <span class="settings-icon"><svg class="icon"><use href="#i-box"></use></svg></span>
+                    <div><h3>Mods e integraciones</h3><p>Descargas desde Modrinth y CurseForge</p></div>
+                  </div>
+                  <div class="setting-block">
+                    <label class="field-label" for="setting-mod-provider">Proveedor predeterminado</label>
+                    <div class="select-wrap">
+                      <select id="setting-mod-provider" class="select">
+                        <option value="modrinth">Modrinth · sin cuenta</option>
+                        <option value="curseforge">CurseForge · API key</option>
+                      </select>
+                      <svg class="icon select-caret"><use href="#i-chevron-down"></use></svg>
+                    </div>
+                    <p class="help-text">Modrinth es gratis y no necesita registro. CurseForge ofrece más catálogo, pero requiere una clave personal.</p>
+                  </div>
+                  <div class="setting-block">
+                    <label class="field-label" for="setting-curseforge-key">API key de CurseForge (opcional)</label>
+                    <div class="row-gap">
+                      <input id="setting-curseforge-key" class="text-input mono grow" type="password" placeholder="Pega tu API key de CurseForge" autocomplete="off" spellcheck="false">
+                      <button id="btn-test-curseforge" class="btn btn-ghost">Probar</button>
+                    </div>
+                    <p class="help-text" id="curseforge-key-help">Se guarda solo en este equipo. Consigue una clave gratuita en el portal de desarrolladores de CurseForge.</p>
+                    <button class="link-btn" data-external="https://console.curseforge.com/?#/api-keys">Obtener una API key <svg class="icon"><use href="#i-external"></use></svg></button>
+                  </div>
+                </section>
+
+                <section class="panel settings-card" id="ai-settings-card">
+                  <div class="settings-card-head">
+                    <span class="settings-icon"><svg class="icon"><use href="#i-sparkles"></use></svg></span>
+                    <div><h3>Asistente de IA</h3><p>Tu propia API key, sin intermediarios</p></div>
+                  </div>
+                  <div class="setting-block">
+                    <label class="field-label" for="setting-ai-key">API key del asistente</label>
+                    <div class="row-gap">
+                      <input id="setting-ai-key" class="text-input mono grow" type="password" placeholder="sk-…" autocomplete="off" spellcheck="false">
+                      <button id="btn-test-ai" class="btn btn-ghost">Probar</button>
+                    </div>
+                    <p class="help-text" id="ai-key-help">Se guarda solo en este equipo y se envía únicamente al proveedor que elijas. Compatible con OpenAI y APIs compatibles.</p>
+                    <button class="link-btn" data-external="https://platform.openai.com/api-keys">Obtener una API key <svg class="icon"><use href="#i-external"></use></svg></button>
+                  </div>
+                  <div class="setting-block">
+                    <div class="ai-settings-grid">
+                      <div>
+                        <label class="field-label" for="setting-ai-base">URL base</label>
+                        <input id="setting-ai-base" class="text-input mono" type="text" placeholder="https://api.openai.com/v1" autocomplete="off" spellcheck="false">
+                      </div>
+                      <div>
+                        <label class="field-label" for="setting-ai-model">Modelo</label>
+                        <input id="setting-ai-model" class="text-input mono" type="text" placeholder="gpt-4o-mini" autocomplete="off" spellcheck="false">
+                      </div>
+                    </div>
+                    <p class="help-text">Puedes usar OpenRouter, Groq, Ollama u otro servicio compatible con <code>/chat/completions</code>.</p>
+                  </div>
+                  <div class="setting-row">
+                    <div><strong>Leer crashes automáticamente</strong><small>Si está activo, la IA recibe el registro sin preguntar y gasta tokens</small></div>
+                    <label class="switch"><input type="checkbox" id="setting-ai-autocrash"><span class="switch-track"></span></label>
+                  </div>
+                  <div class="setting-row">
+                    <div><strong>Clave guardada</strong><small>Borra la API key de este equipo</small></div>
+                    <button class="btn btn-ghost btn-sm" id="btn-ai-clear-key">Borrar clave</button>
+                  </div>
+                </section>
+
+                <section class="panel settings-card">
+                  <div class="settings-card-head">
+                    <span class="settings-icon"><svg class="icon"><use href="#i-message"></use></svg></span>
+                    <div><h3>Comunidad y feedback</h3><p>Dudas, sugerencias y reportes de errores</p></div>
+                  </div>
+                  <div class="setting-row">
+                    <div><strong>Servidor de Discord</strong><small>El servidor de la comunidad estará disponible próximamente</small></div>
+                    <button class="btn btn-ghost btn-sm" disabled>Próximamente</button>
+                  </div>
+                  <div class="setting-row">
+                    <div><strong>Mensaje directo de Discord</strong><small>Escribe a <code>zombigamer55</code> para dudas, sugerencias o reportes</small></div>
+                    <button class="btn btn-ghost btn-sm" id="btn-feedback-discord-dm">Copiar usuario</button>
+                  </div>
+                  <div class="setting-row">
+                    <div><strong>Formulario de feedback</strong><small>Envía sugerencias o errores desde Google Forms</small></div>
+                    <button class="btn btn-ghost btn-sm" id="btn-feedback-form">Abrir formulario</button>
+                  </div>
+                  <div class="setting-row">
+                    <div><strong>Diagnóstico del sistema</strong><small>Copia versión, Java, instancia y mods para pegarlos al pedir ayuda</small></div>
+                    <button class="btn btn-ghost btn-sm" id="btn-copy-diagnostics">Copiar</button>
+                  </div>
+                  <div class="setting-row">
+                    <div><strong>Registros</strong><small>Abre la carpeta de logs para adjuntar el último registro</small></div>
+                    <button class="btn btn-ghost btn-sm" id="btn-feedback-logs">Abrir logs</button>
+                  </div>
+                </section>
+
+                <section class="panel settings-card">
+                  <div class="settings-card-head">
+                    <span class="settings-icon"><svg class="icon"><use href="#i-sparkles"></use></svg></span>
+                    <div><h3>Novedades</h3><p>Últimos cambios de NexyLauncher</p></div>
+                  </div>
+                  <ul class="changelog-list">
+                    <li class="changelog-item">
+                      <span class="changelog-badge" id="changelog-version">1.0.0</span>
+                      <div><strong>Asistente de ayuda</strong><p>Chat integrado para resolver dudas, revisar crashes y aplicar arreglos automáticos.</p></div>
+                    </li>
+                    <li class="changelog-item">
+                      <span class="changelog-badge">Mods</span>
+                      <div><strong>Integración de Modrinth</strong><p>Busca, instala y actualiza mods desde Modrinth en cada instancia.</p></div>
+                    </li>
+                    <li class="changelog-item">
+                      <span class="changelog-badge">Comunidad</span>
+                      <div><strong>Comunidad y feedback</strong><p>Formulario, contacto por Discord, diagnóstico y logs desde Inicio y Ajustes.</p></div>
+                    </li>
+                  </ul>
+                </section>
+
+                <section class="panel settings-card">
+                  <div class="settings-card-head">
+                    <span class="settings-icon"><svg class="icon"><use href="#i-info"></use></svg></span>
+                    <div><h3>Acerca de</h3><p>NexyLauncher 1.0</p></div>
+                  </div>
+                  <div class="about-rows">
+                    <div><span>Versión del launcher</span><strong id="about-version">—</strong></div>
+                    <div><span>Actualizaciones</span><strong id="about-update-status">Sin comprobar</strong></div>
+                    <div><span>Electron</span><strong id="about-electron">—</strong></div>
+                    <div><span>Chromium</span><strong id="about-chrome">—</strong></div>
+                    <div><span>Carpeta de datos</span><button class="link-btn" id="btn-open-data">Abrir carpeta</button></div>
+                  </div>
+                  <div class="about-links">
+                    <button class="link-btn" id="btn-check-update">Buscar actualizaciones <svg class="icon"><use href="#i-refresh"></use></svg></button>
+                    <button class="link-btn" id="btn-about-download" hidden>Descargar <span id="about-update-version"></span> <svg class="icon"><use href="#i-download"></use></svg></button>
+                    <button class="link-btn" data-external="https://www.minecraft.net/es-es">Minecraft.net <svg class="icon"><use href="#i-external"></use></svg></button>
+                    <button class="link-btn" data-external="https://adoptium.net/es/temurin/releases/">Java (Adoptium) <svg class="icon"><use href="#i-external"></use></svg></button>
+                  </div>
+                  <div class="settings-danger">
+                    <div><strong>Restablecer ajustes</strong><small>No borra partidas, versiones ni mods</small></div>
+                    <button class="btn btn-danger btn-sm" id="btn-reset-settings">Restablecer</button>
+                  </div>
+                </section>
+              </div>
+            </div>
+          </section>
+        </main>
+      </div>
+
+      <div id="launch-dock" class="launch-dock" hidden>
+        <div class="launch-orb" id="launch-orb"><span class="spinner"></span></div>
+        <div class="launch-info">
+          <div class="launch-line"><strong id="launch-title">Preparando Minecraft</strong><span id="launch-percent"></span></div>
+          <div class="progress"><div class="progress-bar" id="launch-progress"></div></div>
+          <small id="launch-detail">Comprobando archivos…</small>
+        </div>
+        <div class="launch-actions">
+          <button id="btn-launch-console" class="btn btn-ghost btn-sm"><svg class="icon"><use href="#i-terminal"></use></svg>Consola</button>
+          <button id="btn-launch-stop" class="btn btn-danger btn-sm" hidden><svg class="icon"><use href="#i-stop"></use></svg>Detener</button>
+          <button id="btn-launch-hide" class="icon-btn" title="Ocultar" aria-label="Ocultar estado"><svg class="icon"><use href="#i-x"></use></svg></button>
+        </div>
+      </div>
+
+      <div id="console-drawer" class="console-drawer" hidden>
+        <div class="console-head">
+          <div class="console-title"><svg class="icon"><use href="#i-terminal"></use></svg><strong>Consola</strong><span id="console-status" class="console-status">En espera</span></div>
+          <div class="console-actions">
+            <button id="btn-console-copy" class="text-btn"><svg class="icon"><use href="#i-copy"></use></svg>Copiar</button>
+            <button id="btn-console-clear" class="text-btn"><svg class="icon"><use href="#i-trash"></use></svg>Limpiar</button>
+            <button id="btn-console-close" class="icon-btn" title="Cerrar consola" aria-label="Cerrar consola"><svg class="icon"><use href="#i-x"></use></svg></button>
+          </div>
+        </div>
+        <pre id="console-output" class="console-output" tabindex="0"></pre>
+      </div>
+    </section>
+
+    <div id="modal-overlay" class="modal-overlay" hidden>
+      <div id="modal" class="modal" role="dialog" aria-modal="true"></div>
+    </div>
+
+    <div id="toasts" class="toasts" aria-live="polite"></div>
+  </div>
+
+  <script src="renderer.js"></script>
+  <script src="renderer-home.js"></script>
+  <script src="renderer-instances.js"></script>
+  <script src="renderer-pages.js"></script>
+  <script src="renderer-servers.js"></script>
+  <script src="renderer-content.js"></script>
+  <script src="renderer-ai.js"></script>
+  <script src="renderer-updates.js"></script>
+  <script src="renderer-i18n.js"></script>
+  <script src="renderer-settings.js"></script>
+</body>
+</html>

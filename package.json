@@ -1,0 +1,78 @@
+{
+  "name": "nexylauncher",
+  "productName": "NexyLauncher",
+  "version": "1.0.0",
+  "description": "Launcher de Minecraft Java Edition para cuentas offline, con gestión de versiones, mods y servidores.",
+  "main": "main.js",
+  "scripts": {
+    "start": "electron .",
+    "dev": "electron . --dev",
+    "check": "node --check main.js && node --check preload.js && node --check renderer.js && node --check renderer-home.js && node --check renderer-instances.js && node --check renderer-pages.js && node --check renderer-servers.js && node --check renderer-content.js && node --check renderer-ai.js && node --check renderer-updates.js && node --check renderer-i18n.js && node --check renderer-settings.js && node --check scripts/release.mjs && node --check scripts/test-update.mjs",
+    "build:msi": "electron-builder --win msi --x64",
+    "release": "node scripts/release.mjs",
+    "test:update": "node scripts/test-update.mjs"
+  },
+  "keywords": [
+    "minecraft",
+    "launcher",
+    "offline",
+    "electron"
+  ],
+  "author": "NexyLauncher",
+  "license": "MIT",
+  "type": "commonjs",
+  "build": {
+    "appId": "net.nexy.launcher",
+    "productName": "NexyLauncher",
+    "electronLanguages": [
+      "es",
+      "en-US"
+    ],
+    "copyright": "Copyright © 2026 NexyLauncher",
+    "artifactName": "NexyLauncher-${version}-${arch}.${ext}",
+    "asar": true,
+    "compression": "maximum",
+    "directories": {
+      "output": "dist",
+      "buildResources": "build"
+    },
+    "files": [
+      "main.js",
+      "preload.js",
+      "index.html",
+      "style.css",
+      "renderer*.js",
+      "assets/**/*",
+      "package.json"
+    ],
+    "win": {
+      "icon": "assets/icon.png",
+      "target": [
+        {
+          "target": "msi",
+          "arch": [
+            "x64"
+          ]
+        }
+      ]
+    },
+    "msi": {
+      "oneClick": false,
+      "perMachine": false,
+      "upgradeCode": "{CDB27381-F606-414D-B6C0-FD086585DAAC}",
+      "createDesktopShortcut": true,
+      "createStartMenuShortcut": true,
+      "shortcutName": "NexyLauncher",
+      "runAfterFinish": true,
+      "warningsAsErrors": false
+    }
+  },
+  "devDependencies": {
+    "electron": "^44.7.0",
+    "electron-builder": "^26.18.0"
+  },
+  "dependencies": {
+    "adm-zip": "^0.4.16",
+    "minecraft-launcher-core": "^3.18.2"
+  }
+}
