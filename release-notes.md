@@ -2,8 +2,6 @@
 
 ### Novedades
 
-<!-- Añade aquí las novedades de la 1.1.0: una línea "- ..." por cada una. -->
-
 - **Instalador EXE con carpeta a elegir**: el nuevo instalador NSIS permite elegir la ubicación, crea accesos directos y no exige administrador. Sustituye al MSI anterior.
 - **Actualizaciones sin perder datos**: cuentas, instancias, servidores, skins y ajustes viven en `%APPDATA%\NexyLauncher`. Puedes instalar en otra carpeta sin mover nada; los datos antiguos se migran solos.
 - **Modo portable**: con un `portable.txt` junto al `.exe`, los datos se guardan en `data\` y puedes llevarlo en una unidad USB.
