@@ -1,7 +1,7 @@
 'use strict';
 
 /*
- * NexyLauncher 1.0 — núcleo del renderer
+ * NexyLauncher 1.1 — núcleo del renderer
  * Utilidades, sesión, navegación, avatares, avisos y modales.
  */
 (() => {
@@ -70,10 +70,13 @@
     settings: null,
     accounts: [],
     account: null,
+    msa: null,
     servers: [],
+    localServers: [],
     localVersions: [],
     instances: [],
     activeInstanceId: null,
+    sessions: [],
     remote: null,
     remoteError: null,
     remoteLoading: false,
@@ -192,6 +195,13 @@
     return formatDate(value);
   }
 
+  function clockTime(value) {
+    if (!value) return '';
+    const date = new Date(value);
+    if (Number.isNaN(date.getTime())) return '';
+    return new Intl.DateTimeFormat('es-ES', { hour: '2-digit', minute: '2-digit' }).format(date);
+  }
+
   function formatBytes(bytes) {
     const number = Number(bytes) || 0;
     if (number < 1024) return `${number} B`;
@@ -291,7 +301,9 @@
 
   function errorMessage(error) {
     if (!error) return 'Error desconocido.';
-    return String(error.message || error);
+    return String(error.message || error)
+      .replace(/^Error invoking remote method '[^']+':\s*(?:Error:\s*)?/, '')
+      .trim() || 'Error desconocido.';
   }
 
   App.clamp = clamp;
@@ -354,7 +366,7 @@
       : 'no detectado';
 
     return [
-      `NexyLauncher ${system.appVersion || '1.0.0'}`,
+      `NexyLauncher ${system.appVersion || '1.1.0'}`,
       `Electron ${system.electron || '—'} · Chromium ${system.chrome || '—'} · Node ${system.node || '—'}`,
       `${platformLabel(system.platform)} · ${system.arch || 'arquitectura desconocida'}`,
       `CPU: ${system.cpu || '—'}`,
@@ -462,13 +474,32 @@
     return `<svg viewBox="0 0 8 8" shape-rendering="crispEdges" xmlns="http://www.w3.org/2000/svg" aria-hidden="true">${parts.join('')}</svg>`;
   }
 
-  function paintAvatar(element, name) {
+  function avatarFace(account) {
+    const face = typeof account === 'object' ? account?.face : '';
+    const overlay = typeof account === 'object' ? account?.faceOverlay : '';
+    if (!face) return '';
+    return `<img class="avatar-face" src="${face}" alt="" draggable="false">${overlay
+      ? `<img class="avatar-face avatar-overlay" src="${overlay}" alt="" draggable="false">`
+      : ''}`;
+  }
+
+  function avatarInner(account) {
+    const name = typeof account === 'object' ? account?.name : account;
+    return avatarFace(account) || avatarSvg(name);
+  }
+
+  function paintAvatar(element, name, face, overlay) {
     if (!element) return;
-    element.innerHTML = avatarSvg(name);
+    element.innerHTML = face
+      ? `<img class="avatar-face" src="${face}" alt="" draggable="false">${overlay
+        ? `<img class="avatar-face avatar-overlay" src="${overlay}" alt="" draggable="false">`
+        : ''}`
+      : avatarSvg(name);
     element.title = name ? `Avatar de ${name}` : 'Sin sesión';
   }
 
   App.avatarSvg = avatarSvg;
+  App.avatarInner = avatarInner;
   App.paintAvatar = paintAvatar;
 
   /* ---------------------------------------------------------------------- */
@@ -644,6 +675,7 @@
   App.hideBootScreen = hideBootScreen;
 
   function showLogin() {
+    closeAccountSwitcher?.();
     hideBootScreen();
     $('#screen-app').classList.remove('active');
     $('#screen-login').classList.add('active');
@@ -652,7 +684,7 @@
     renderSavedAccounts();
     const input = $('#login-username');
     if (input) {
-      const last = state.accounts[0]?.name || '';
+      const last = (state.accounts.find((account) => account.type !== 'msa') || state.accounts[0])?.name || '';
       if (!input.value) input.value = last;
       setTimeout(() => input.focus(), 160);
     }
@@ -687,13 +719,21 @@
 
   function renderAccountUI() {
     const name = state.account?.name || 'Invitado';
-    ['#hero-avatar', '#topbar-avatar', '#rail-avatar'].forEach((selector) => paintAvatar($(selector), name));
+    ['#hero-avatar', '#topbar-avatar', '#rail-avatar'].forEach((selector) => {
+      paintAvatar($(selector), name, state.account?.face, state.account?.faceOverlay);
+    });
     const username = $('#topbar-username');
     if (username) username.textContent = name;
     const heroName = $('#hero-username');
     if (heroName) heroName.textContent = name;
     const rail = $('#btn-account-rail');
     if (rail) rail.title = state.account ? `Perfil: ${name}` : 'Iniciar sesión';
+    const typeBadge = $('#hero-account-type');
+    if (typeBadge) {
+      const isMsa = state.account?.type === 'msa';
+      typeBadge.textContent = isMsa ? 'Cuenta Microsoft' : 'Cuenta offline';
+      typeBadge.classList.toggle('badge-online', isMsa);
+    }
   }
 
   App.renderAccountUI = renderAccountUI;
@@ -704,24 +744,36 @@
     if (!wrap || !host) return;
     const accounts = Array.isArray(state.accounts) ? state.accounts : [];
     wrap.hidden = accounts.length === 0;
-    host.innerHTML = accounts.slice(0, 4).map((account) => `
+    host.innerHTML = accounts.slice(0, 4).map((account) => {
+      const isMsa = account.type === 'msa';
+      const meta = isMsa
+        ? (account.sessionActive ? 'Cuenta Microsoft · sesión activa' : 'Cuenta Microsoft · sesión caducada')
+        : (account.lastUsed ? `Usado ${relativeDate(account.lastUsed)}` : 'Cuenta offline');
+      return `
       <button class="saved-account" data-saved-account="${esc(account.id)}" title="Entrar como ${esc(account.name)}">
-        <span class="avatar">${avatarSvg(account.name)}</span>
+        <span class="avatar">${avatarInner(account)}</span>
         <span class="saved-account-copy">
-          <span class="saved-account-name">${esc(account.name)}</span>
-          <span class="saved-account-meta">${account.lastUsed ? `Usado ${relativeDate(account.lastUsed)}` : 'Cuenta offline'}</span>
+          <span class="saved-account-name">${isMsa ? icon('windows') : ''}${esc(account.name)}</span>
+          <span class="saved-account-meta${isMsa && !account.sessionActive ? ' is-expired' : ''}">${meta}</span>
         </span>
-      </button>`).join('');
+      </button>`;
+    }).join('');
 
     $$('[data-saved-account]', host).forEach((button) => {
       button.addEventListener('click', async () => {
         const id = button.dataset.savedAccount;
+        const target = state.accounts.find((account) => account.id === id);
         button.disabled = true;
         try {
           const result = await api.accounts.activate(id);
           updateAuth(result);
           enterApp();
-          toast(`Has entrado como ${state.account?.name || 'jugador'}.`, 'success', 'Sesión iniciada');
+          if (target?.type === 'msa' && !target.sessionActive) {
+            toast('Esta cuenta de Microsoft necesita iniciar sesión de nuevo. La sesión no se guarda al cerrar el launcher.', 'info', 'Cuenta Microsoft');
+            openMicrosoftLogin();
+          } else {
+            toast(`Has entrado como ${state.account?.name || 'jugador'}.`, 'success', 'Sesión iniciada');
+          }
         } catch (error) {
           toastError(errorMessage(error));
         } finally {
@@ -820,43 +872,94 @@
   }
 
   function openAccountModal() {
+    closeAccountSwitcher?.();
     if (!state.account) {
       toast('Inicia sesión para gestionar tu perfil.', 'warning');
       return;
     }
     const current = state.account;
-    const others = state.accounts.filter((account) => account.id !== current.id);
+    const currentIsMsa = current.type === 'msa';
+    const currentSession = currentIsMsa && Boolean(current.sessionActive);
+    const msaAccounts = state.accounts.filter((account) => account.type === 'msa');
+    const offlineAccounts = state.accounts.filter((account) => account.type !== 'msa');
 
-    const rows = others.map((account) => `
+    const msaRows = msaAccounts.length
+      ? msaAccounts.map((account) => {
+        const active = Boolean(account.sessionActive);
+        const isCurrent = account.id === current.id;
+        const clock = active ? clockTime(account.sessionExpiresAt) : '';
+        return `
+        <div class="account-row">
+          <span class="avatar">${avatarInner(account)}</span>
+          <span class="account-row-name" title="${esc(account.name)}">${esc(account.name)}<small class="account-row-meta ${active ? 'on' : 'off'}">${icon(active ? 'check' : 'clock')}${active ? 'Sesión activa' : 'Sesión caducada'}${clock ? ` · ${clock}` : ''}</small></span>
+          ${isCurrent ? '<span class="badge badge-soft">En uso</span>' : `<button class="btn btn-ghost btn-sm" data-account-activate="${esc(account.id)}">Usar</button>`}
+          ${active
+            ? `<button class="action-btn" data-account-msa-signout="${esc(account.id)}" title="Cerrar sesión de Microsoft">${icon('logout')}</button>`
+            : `<button class="btn btn-ghost btn-sm" data-account-msa-login="${esc(account.id)}">Iniciar sesión</button>`}
+          <button class="action-btn" data-account-skin="${esc(account.id)}" title="Cambiar skin">${icon('image')}</button>
+          <button class="action-btn danger" data-account-remove="${esc(account.id)}" title="Eliminar perfil">${icon('trash')}</button>
+        </div>`;
+      }).join('')
+      : `<p class="account-empty">Todavía no hay ninguna cuenta Microsoft. Añádela con un código temporal: no se pide tu contraseña ni se guardan tokens.</p>`;
+
+    const offlineRows = offlineAccounts
+      .filter((account) => account.id !== current.id)
+      .map((account) => `
       <div class="account-row">
-        <span class="avatar">${avatarSvg(account.name)}</span>
-        <span class="account-row-name" title="${esc(account.name)}">${esc(account.name)}</span>
+        <span class="avatar">${avatarInner(account)}</span>
+        <span class="account-row-name" title="${esc(account.name)}">${esc(account.name)}<small class="account-row-meta">Cuenta offline</small></span>
         <button class="btn btn-ghost btn-sm" data-account-activate="${esc(account.id)}">Usar</button>
+        <button class="action-btn" data-account-skin="${esc(account.id)}" title="Cambiar skin">${icon('image')}</button>
         <button class="action-btn danger" data-account-remove="${esc(account.id)}" title="Eliminar perfil">${icon('trash')}</button>
       </div>`).join('');
-
     const modal = openModal(`
       <div class="modal-head">
-        <div><span class="eyebrow">TU PERFIL</span><h2>Cuenta y perfiles</h2><p>Cambia de jugador sin cerrar el launcher. Todas las cuentas son offline.</p></div>
+        <div><span class="eyebrow">TUS CUENTAS</span><h2>Cuenta y perfiles</h2><p>Cuentas offline y Microsoft en el mismo launcher. La sesión de Microsoft es temporal y no se guardan tokens.</p></div>
         <button class="icon-btn modal-close" data-modal-close aria-label="Cerrar">${icon('x')}</button>
       </div>
       <div class="account-hero">
-        <span class="avatar avatar-lg">${avatarSvg(current.name)}</span>
-        <div class="account-hero-copy"><strong>${esc(current.name)}</strong><small>${icon('shield')} Cuenta offline · creado ${formatDate(current.createdAt)}</small></div>
+        <span class="avatar avatar-lg">${avatarInner(current)}</span>
+        <div class="account-hero-copy">
+          <strong>${esc(current.name)}</strong>
+          <small>${currentIsMsa
+            ? `${icon('windows')} Cuenta Microsoft · ${currentSession ? `sesión activa${clockTime(current.sessionExpiresAt) ? ` · ${clockTime(current.sessionExpiresAt)}` : ''}` : 'sesión caducada'}`
+            : `${icon('shield')} Cuenta offline · creado ${formatDate(current.createdAt)}`}</small>
+        </div>
         <span class="badge badge-soft">Activo</span>
+        <button class="action-btn" id="account-skin-current" title="Cambiar skin">${icon('image')}</button>
         <button class="action-btn danger" data-account-remove="${esc(current.id)}" title="Eliminar este perfil">${icon('trash')}</button>
       </div>
-      ${others.length ? `
-        <div class="account-list">
-          <div class="account-list-label"><span>Otros perfiles</span><span>${others.length}</span></div>
-          ${rows}
-        </div>` : ''}
+
+      ${currentIsMsa ? `
+      <div class="account-facts">
+        <div><span>UUID</span><code>${esc(current.uuid || '—')}</code></div>
+        <div><span>XUID</span><code>${esc(current.xuid || '—')}</code></div>
+        <div><span>Sesión</span><strong>${currentSession ? 'Activa' : 'Caducada'}</strong></div>
+      </div>` : ''}
+
+      <section class="account-msa">
+        <div class="account-msa-head">
+          <span class="account-msa-icon">${icon('windows')}</span>
+          <div class="account-msa-copy">
+            <strong>Cuenta Microsoft</strong>
+            <small>Tu perfil real de Minecraft: Java Edition, compatible con servidores premium.</small>
+          </div>
+          <button class="btn btn-primary btn-sm" id="account-msa-add">${icon('plus')}Añadir</button>
+        </div>
+        <div class="account-list">${msaRows}</div>
+      </section>
+
+      <div class="account-list">
+        <div class="account-list-label"><span>Perfiles offline</span><span>${offlineAccounts.filter((account) => account.id !== current.id).length}</span></div>
+        ${offlineRows || '<p class="account-empty">No hay otros perfiles offline.</p>'}
+      </div>
+
       <div class="account-add">
-        <input id="account-new-name" class="text-input" maxlength="16" placeholder="Nuevo nombre de jugador" autocomplete="off" spellcheck="false">
-        <button class="btn btn-primary" id="account-add-btn">Añadir</button>
+        <input id="account-new-name" class="text-input" maxlength="16" placeholder="Nuevo nombre de jugador offline" autocomplete="off" spellcheck="false">
+        <button class="btn btn-ghost" id="account-add-btn">Añadir offline</button>
       </div>
       <p class="form-error" id="account-add-error" hidden></p>
-      <div class="settings-link"><span>Los perfiles se guardan en este equipo.</span><button class="link-btn" data-goto="settings" data-modal-close>Ajustes</button></div>
+      <p class="account-note">${icon('info')}Los perfiles se guardan en este equipo. La sesión de Microsoft y sus tokens desaparecen al cerrar NexyLauncher.</p>
       <div class="modal-footer">
         <button class="btn btn-ghost" id="account-logout">${icon('logout')}Cerrar sesión</button>
         <button class="btn btn-primary" data-modal-close>Listo</button>
@@ -894,6 +997,28 @@
         add();
       }
     });
+
+    $('#account-msa-add')?.addEventListener('click', () => {
+      closeModal();
+      openMicrosoftLogin();
+    });
+
+    modal.querySelectorAll('[data-account-msa-login]').forEach((button) => {
+      button.addEventListener('click', () => {
+        closeModal();
+        openMicrosoftLogin();
+      });
+    });
+
+    modal.querySelectorAll('[data-account-msa-signout]').forEach((button) => {
+      button.addEventListener('click', () => signOutMicrosoft(button.dataset.accountMsaSignout));
+    });
+
+    modal.querySelectorAll('[data-account-skin]').forEach((button) => {
+      button.addEventListener('click', () => openSkinModal(button.dataset.accountSkin));
+    });
+
+    $('#account-skin-current', modal)?.addEventListener('click', () => openSkinModal(current.id));
 
     modal.querySelectorAll('[data-account-activate]').forEach((button) => {
       button.addEventListener('click', async () => {
@@ -936,6 +1061,266 @@
     });
   }
 
+  async function signOutMicrosoft(accountId) {
+    try {
+      const result = await api.accounts.signOutMicrosoft(accountId);
+      if (result?.accounts) state.accounts = result.accounts;
+      if (result?.activeAccount !== undefined) state.account = result.activeAccount || null;
+      if (result?.msa) state.msa = result.msa;
+      renderAccountUI();
+      renderSavedAccounts();
+      closeModal();
+      if (state.account) openAccountModal();
+      toast('Sesión de Microsoft cerrada. El perfil sigue guardado, pero tendrás que iniciar sesión para jugar con él.', 'success', 'Cuenta Microsoft');
+    } catch (error) {
+      toastError(errorMessage(error), 'Cuenta Microsoft');
+    }
+  }
+
+  /* ---------------------------------------------------------------------- */
+  /*                            Selector de skins                           */
+  /* ---------------------------------------------------------------------- */
+
+  function skinSourceText(skin) {
+    if (skin?.source === 'custom') return 'Skin personalizada guardada en este equipo.';
+    if (skin?.source === 'microsoft') return 'Skin oficial de tu cuenta de Minecraft.';
+    return 'Sin skin. Se usa un avatar generado a partir del nombre.';
+  }
+
+  function showSkinModal(account, skin) {
+    const fresh = state.accounts.find((item) => item.id === account.id) || account;
+    const faceAccount = {
+      name: fresh.name,
+      face: skin?.face || null,
+      faceOverlay: skin?.overlay || null
+    };
+    const modal = openModal(`
+      ${modalHead('PERSONALIZACIÓN', 'Skin del perfil', 'Elige la cara que se muestra en el launcher. Solo se guarda en este equipo.')}
+      <div class="skin-preview">
+        <div class="skin-face-card">
+          <span class="avatar avatar-xl">${avatarInner(faceAccount)}</span>
+          <strong>${esc(fresh.name)}</strong>
+          <small>${skinSourceText(skin)}</small>
+        </div>
+        <div class="skin-sheet-card">
+          ${skin?.sheet
+            ? `<img class="skin-sheet" src="${skin.sheet}" alt="Skin de ${esc(fresh.name)}">`
+            : `<span class="skin-empty">${icon('image')}Sin skin</span>`}
+        </div>
+      </div>
+      <p class="form-error" id="skin-error" hidden></p>
+      <div class="modal-actions">
+        <button type="button" class="btn btn-primary" id="skin-upload">${icon('download')}Subir skin PNG</button>
+        ${fresh.type === 'msa'
+          ? `<button type="button" class="btn btn-ghost" id="skin-official">${icon('windows')}Usar skin de Minecraft</button>`
+          : (skin?.sheet ? `<button type="button" class="btn btn-ghost" id="skin-clear">${icon('trash')}Quitar skin</button>` : '')}
+        <button type="button" class="btn btn-ghost" data-modal-close>Listo</button>
+      </div>
+      <p class="account-note">${icon('info')}PNG de 64×64 o 64×32 píxeles. La imagen se guarda solo en este equipo y no cambia tu skin dentro de Minecraft.</p>`, {
+      onClose: () => {
+        if (state.account) openAccountModal();
+      }
+    });
+
+    const applyResult = (result) => {
+      if (result?.accounts) state.accounts = result.accounts;
+      if (result?.activeAccount !== undefined) state.account = result.activeAccount || null;
+      renderAccountUI();
+      renderSavedAccounts();
+      const next = state.accounts.find((item) => item.id === account.id) || account;
+      showSkinModal(next, result?.skin || { source: 'none' });
+    };
+
+    $('#skin-upload', modal)?.addEventListener('click', async () => {
+      const button = $('#skin-upload');
+      const errorBox = $('#skin-error');
+      if (errorBox) errorBox.hidden = true;
+      setBusy(button, true, 'Subiendo…');
+      try {
+        const result = await api.accounts.pickSkin(account.id);
+        if (result?.canceled) {
+          setBusy(button, false);
+          return;
+        }
+        applyResult(result);
+        toast('Skin actualizada.', 'success', 'Skin');
+      } catch (error) {
+        setBusy(button, false);
+        if (errorBox) {
+          errorBox.textContent = errorMessage(error);
+          errorBox.hidden = false;
+        }
+      }
+    });
+
+    $('#skin-official', modal)?.addEventListener('click', async () => {
+      const button = $('#skin-official');
+      const errorBox = $('#skin-error');
+      if (errorBox) errorBox.hidden = true;
+      setBusy(button, true, 'Descargando…');
+      try {
+        const result = await api.accounts.resetSkin(account.id);
+        applyResult(result);
+        toast('Skin de Minecraft aplicada.', 'success', 'Skin');
+      } catch (error) {
+        setBusy(button, false);
+        if (errorBox) {
+          errorBox.textContent = errorMessage(error);
+          errorBox.hidden = false;
+        }
+      }
+    });
+
+    $('#skin-clear', modal)?.addEventListener('click', async () => {
+      const button = $('#skin-clear');
+      const errorBox = $('#skin-error');
+      if (errorBox) errorBox.hidden = true;
+      setBusy(button, true, 'Quitando…');
+      try {
+        const result = await api.accounts.resetSkin(account.id);
+        applyResult(result);
+        toast('Skin eliminada. Se usará el avatar del nombre.', 'success', 'Skin');
+      } catch (error) {
+        setBusy(button, false);
+        if (errorBox) {
+          errorBox.textContent = errorMessage(error);
+          errorBox.hidden = false;
+        }
+      }
+    });
+  }
+
+  async function openSkinModal(id) {
+    const account = state.accounts.find((item) => item.id === id);
+    if (!account) {
+      toast('Ese perfil ya no existe.', 'warning');
+      return;
+    }
+    try {
+      const result = await api.accounts.skin(id);
+      showSkinModal(account, result?.skin || { source: 'none' });
+    } catch (error) {
+      toastError(errorMessage(error), 'Skin');
+    }
+  }
+
+  App.openSkinModal = openSkinModal;
+
+  /* ---------------------------------------------------------------------- */
+  /*                         Inicio de sesión Microsoft                     */
+  /* ---------------------------------------------------------------------- */
+
+  let msaModalOpen = false;
+  let msaSucceeded = false;
+  let msaWasSignedIn = false;
+  let msaLastAccountId = null;
+  let msaLastError = '';
+
+  function openMicrosoftModal(info) {
+    msaModalOpen = true;
+    msaSucceeded = false;
+    const host = String(info.verificationUri || 'https://www.microsoft.com/link').replace(/^https?:\/\//i, '');
+
+    const modal = openModal(`
+      ${modalHead('CUENTA MICROSOFT', 'Inicia sesión con Microsoft', 'Usa el código temporal en la página de Microsoft. No pedimos tu contraseña y no guardamos tokens.')}
+      <div class="msa-code-box">
+        <span class="eyebrow">CÓDIGO</span>
+        <strong id="msa-user-code">${esc(info.userCode)}</strong>
+        <button class="btn btn-ghost btn-sm" id="msa-copy-code">${icon('copy')}Copiar</button>
+      </div>
+      <p class="modal-text">Abre <strong>${esc(host)}</strong> en tu navegador e introduce el código. El navegador se abrirá automáticamente.</p>
+      <p class="msa-status-line" id="msa-status-line"><span class="spinner"></span>Esperando a que completes el inicio de sesión…</p>
+      <p class="form-error" id="msa-error" hidden></p>
+      <div class="modal-actions">
+        <button type="button" class="btn btn-ghost" data-msa-open>${icon('external')}Abrir página</button>
+        <button type="button" class="btn btn-ghost" data-msa-retry hidden>${icon('refresh')}Reintentar</button>
+        <button type="button" class="btn btn-ghost" data-msa-cancel>Cancelar</button>
+      </div>`, {
+      onClose: () => {
+        msaModalOpen = false;
+        if (!msaSucceeded) api.msa.cancel().catch(() => {});
+      }
+    });
+
+    $('#msa-copy-code', modal)?.addEventListener('click', async () => {
+      if (await App.copyText(info.userCode)) toast('Código copiado.', 'success');
+    });
+    $('[data-msa-open]', modal)?.addEventListener('click', () => api.openExternal(info.verificationUri).catch(() => {}));
+    $('[data-msa-cancel]', modal)?.addEventListener('click', () => closeModal());
+    $('[data-msa-retry]', modal)?.addEventListener('click', () => {
+      closeModal();
+      openMicrosoftLogin();
+    });
+  }
+
+  async function openMicrosoftLogin() {
+    if (msaModalOpen) return;
+    if (state.launch.active) {
+      toast('Cierra Minecraft antes de cambiar de cuenta de Microsoft.', 'warning');
+      return;
+    }
+    try {
+      const info = await api.msa.begin();
+      openMicrosoftModal(info);
+      api.openExternal(info.verificationUri).catch(() => {});
+    } catch (error) {
+      toastError(errorMessage(error), 'Cuenta Microsoft');
+    }
+  }
+
+  App.openMicrosoftLogin = openMicrosoftLogin;
+  App.openMicrosoftModal = openMicrosoftModal;
+
+  function onMsaStatus(next) {
+    if (!next) return;
+    const becameSignedIn = Boolean(next.signedIn) && !msaWasSignedIn;
+    const accountChanged = Boolean(next.signedIn) && Boolean(next.accountId) && next.accountId !== msaLastAccountId;
+    const shouldAnnounce = Boolean(next.signedIn) && (becameSignedIn || accountChanged);
+    msaWasSignedIn = Boolean(next.signedIn);
+    msaLastAccountId = next.signedIn ? next.accountId || null : null;
+
+    state.msa = next;
+    if (Array.isArray(next.accounts)) state.accounts = next.accounts;
+    if ('activeAccount' in next) {
+      state.account = next.activeAccount || null;
+      if (state.settings) state.settings.activeAccountId = state.account?.id || null;
+    }
+    renderAccountUI();
+    renderSavedAccounts();
+
+    if (next.signedIn) {
+      msaLastError = '';
+      if (msaModalOpen) {
+        msaSucceeded = true;
+        const line = $('#msa-status-line');
+        if (line) line.innerHTML = `${icon('check')}Sesión iniciada. Cerrando…`;
+        closeModal();
+      }
+      if (!shouldAnnounce) return;
+      if (!$('#screen-app')?.classList.contains('active')) enterApp();
+      App.home?.render?.();
+      toast(`Sesión iniciada como ${next.profile?.name || 'tu cuenta Microsoft'}. La sesión es temporal y no se guarda en disco.`, 'success', 'Cuenta Microsoft');
+      return;
+    }
+
+    if (next.error && next.error !== msaLastError) {
+      if (msaModalOpen) {
+        const line = $('#msa-status-line');
+        const errorBox = $('#msa-error');
+        const retry = $('[data-msa-retry]');
+        if (line) line.hidden = true;
+        if (errorBox) {
+          errorBox.textContent = next.error;
+          errorBox.hidden = false;
+        }
+        if (retry) retry.hidden = false;
+      } else {
+        toastError(next.error, 'Cuenta Microsoft');
+      }
+    }
+    msaLastError = next.error || '';
+  }
+
   async function removeAccount(id) {
     const account = state.accounts.find((item) => item.id === id);
     if (!account) return;
@@ -968,6 +1353,127 @@
   App.openAccountModal = openAccountModal;
 
   /* ---------------------------------------------------------------------- */
+  /*                       Selector rápido de perfiles                      */
+  /* ---------------------------------------------------------------------- */
+
+  let accountSwitcher = null;
+  let accountSwitcherCleanup = null;
+
+  function closeAccountSwitcher() {
+    if (!accountSwitcher) return;
+    accountSwitcher.remove();
+    accountSwitcher = null;
+    if (accountSwitcherCleanup) {
+      accountSwitcherCleanup();
+      accountSwitcherCleanup = null;
+    }
+  }
+
+  function openAccountSwitcher(anchor) {
+    if (accountSwitcher) {
+      closeAccountSwitcher();
+      return;
+    }
+    if (!anchor) return;
+
+    const list = Array.isArray(state.accounts) ? state.accounts : [];
+    const pop = document.createElement('div');
+    pop.id = 'account-switcher';
+    pop.className = 'account-switcher';
+    pop.innerHTML = `
+      <div class="account-switcher-head">
+        <div><span class="eyebrow">PERFILES</span><strong>Cambiar de perfil</strong></div>
+        <button class="icon-btn" data-switch-close aria-label="Cerrar">${icon('x')}</button>
+      </div>
+      <div class="account-switcher-list">
+        ${list.map((account) => {
+          const isActive = account.id === state.account?.id;
+          const isMsa = account.type === 'msa';
+          const session = isMsa && account.sessionActive;
+          const clock = session ? clockTime(account.sessionExpiresAt) : '';
+          const meta = isMsa
+            ? (session ? `Microsoft · sesión activa${clock ? ` · ${clock}` : ''}` : 'Microsoft · sesión caducada')
+            : 'Cuenta offline';
+          return `
+          <button class="account-switcher-row${isActive ? ' active' : ''}" data-switch-account="${esc(account.id)}">
+            <span class="avatar">${avatarInner(account)}</span>
+            <span class="account-switcher-copy"><strong>${esc(account.name)}</strong><small>${meta}</small></span>
+            ${isActive
+              ? `<span class="switcher-state on">${icon('check')}</span>`
+              : (isMsa && !session ? `<span class="switcher-state off">${icon('clock')}</span>` : `<span class="switcher-state">${icon('chevron-right')}</span>`)}
+          </button>`;
+        }).join('')}
+      </div>
+      <div class="account-switcher-foot">
+        <button class="btn btn-ghost btn-sm" data-switch-manage>${icon('settings')}Gestionar cuentas</button>
+        <button class="btn btn-primary btn-sm" data-switch-add>${icon('windows')}Añadir Microsoft</button>
+      </div>`;
+
+    document.body.appendChild(pop);
+    accountSwitcher = pop;
+
+    const rect = anchor.getBoundingClientRect();
+    const width = 336;
+    const left = Math.max(12, Math.min(rect.right - width, window.innerWidth - width - 12));
+    pop.style.top = `${Math.round(rect.bottom + 8)}px`;
+    pop.style.left = `${Math.round(left)}px`;
+
+    const onPointerDown = (event) => {
+      if (pop.contains(event.target) || anchor.contains(event.target)) return;
+      closeAccountSwitcher();
+    };
+    const onKeyDown = (event) => {
+      if (event.key === 'Escape') closeAccountSwitcher();
+    };
+    const timer = setTimeout(() => document.addEventListener('pointerdown', onPointerDown), 0);
+    document.addEventListener('keydown', onKeyDown);
+    accountSwitcherCleanup = () => {
+      clearTimeout(timer);
+      document.removeEventListener('pointerdown', onPointerDown);
+      document.removeEventListener('keydown', onKeyDown);
+    };
+
+    pop.querySelector('[data-switch-close]')?.addEventListener('click', closeAccountSwitcher);
+    pop.querySelector('[data-switch-manage]')?.addEventListener('click', () => {
+      closeAccountSwitcher();
+      openAccountModal();
+    });
+    pop.querySelector('[data-switch-add]')?.addEventListener('click', () => {
+      closeAccountSwitcher();
+      openMicrosoftLogin();
+    });
+    pop.querySelectorAll('[data-switch-account]').forEach((button) => {
+      button.addEventListener('click', async () => {
+        const id = button.dataset.switchAccount;
+        const target = list.find((account) => account.id === id);
+        if (!target || target.id === state.account?.id) {
+          closeAccountSwitcher();
+          return;
+        }
+        button.disabled = true;
+        try {
+          const result = await api.accounts.activate(id);
+          updateAuth(result);
+          App.home?.render?.();
+          closeAccountSwitcher();
+          if (target.type === 'msa' && !target.sessionActive) {
+            toast('Esta cuenta de Microsoft necesita iniciar sesión de nuevo.', 'info', 'Cuenta Microsoft');
+            openMicrosoftLogin();
+          } else {
+            toast(`Ahora juegas como ${state.account?.name || target.name}.`, 'success', 'Perfil activo');
+          }
+        } catch (error) {
+          button.disabled = false;
+          toastError(errorMessage(error));
+        }
+      });
+    });
+  }
+
+  App.openAccountSwitcher = openAccountSwitcher;
+  App.closeAccountSwitcher = closeAccountSwitcher;
+
+  /* ---------------------------------------------------------------------- */
   /*                              Enlaces y atajos                          */
   /* ---------------------------------------------------------------------- */
 
@@ -977,6 +1483,7 @@
     $('#btn-close')?.addEventListener('click', () => api.window.close());
 
     $('.titlebar-drag')?.addEventListener('dblclick', () => api.window.toggleMaximize());
+    window.addEventListener('resize', () => closeAccountSwitcher());
     api.window.onMaximized?.((maximized) => {
       const maxIcon = $('#icon-max');
       if (maxIcon) maxIcon.querySelector('use')?.setAttribute('href', maximized ? '#i-restore' : '#i-maximize');
@@ -1015,7 +1522,7 @@
       if (event.target.id === 'modal-overlay' || event.target.closest('[data-modal-close]')) closeModal();
     });
 
-    $('#btn-account-top')?.addEventListener('click', openAccountModal);
+    $('#btn-account-top')?.addEventListener('click', (event) => openAccountSwitcher(event.currentTarget));
     $('#btn-account-rail')?.addEventListener('click', openAccountModal);
     $('#btn-top-console')?.addEventListener('click', () => App.launch?.openConsole?.());
     $('#session-chip')?.addEventListener('click', () => App.launch?.openConsole?.());
@@ -1058,10 +1565,12 @@
   function bindLogin() {
     $('#login-form')?.addEventListener('submit', handleLogin);
     $('#btn-random-name')?.addEventListener('click', randomName);
+    $('#login-microsoft')?.addEventListener('click', openMicrosoftLogin);
     $('#login-username')?.addEventListener('input', () => {
       const error = $('#login-error');
       if (error) error.hidden = true;
     });
+    api.msa?.onStatus?.(onMsaStatus);
   }
 
   /* ---------------------------------------------------------------------- */
@@ -1079,7 +1588,9 @@
       state.settings = data.settings || {};
       state.accounts = Array.isArray(data.accounts) ? data.accounts : [];
       state.account = data.activeAccount || null;
+      state.msa = data.msa || null;
       state.servers = Array.isArray(data.servers) ? data.servers : [];
+      state.localServers = Array.isArray(data.localServers) ? data.localServers : [];
       state.localVersions = Array.isArray(data.localVersions) ? data.localVersions : [];
       state.mods = Array.isArray(data.mods) ? data.mods : [];
       state.instances = Array.isArray(data.instances)
@@ -1088,6 +1599,7 @@
           ? data.settings.instances
           : [];
       state.activeInstanceId = data.activeInstanceId || data.settings?.activeInstanceId || null;
+      state.sessions = Array.isArray(data.sessions) ? data.sessions : [];
       state.java = Array.isArray(data.java) ? data.java : [];
       state.javaReady = state.java.length > 0;
       state.system = data.system || {};
@@ -1112,6 +1624,7 @@
       App.instances?.init?.();
       App.mods?.init?.();
       App.servers?.init?.();
+      App.localServers?.init?.();
       App.content?.init?.();
       App.ai?.init?.();
       App.updates?.init?.();
@@ -1121,6 +1634,7 @@
       App.instances?.render?.();
       App.mods?.render?.();
       App.servers?.render?.();
+      App.localServers?.render?.();
       App.content?.render?.();
       App.ai?.render?.();
       App.updates?.render?.();

@@ -1,5 +1,5 @@
 /* ==========================================================================
-   NexyLauncher 1.0 — hoja de estilos principal
+   NexyLauncher 1.1 — hoja de estilos principal
    ========================================================================== */
 
 :root {
@@ -1165,6 +1165,20 @@ code {
   border-radius: 10px;
   background: #171d29;
   box-shadow: inset 0 0 0 1px rgba(255, 255, 255, 0.08);
+  position: relative;
+}
+
+.avatar-face {
+  display: block;
+  width: 100%;
+  height: 100%;
+  object-fit: cover;
+  image-rendering: pixelated;
+}
+
+.avatar-overlay {
+  position: absolute;
+  inset: 0;
 }
 
 .avatar svg {
@@ -1190,6 +1204,12 @@ code {
   width: 60px;
   height: 60px;
   border-radius: 15px;
+}
+
+.avatar-xl {
+  width: 92px;
+  height: 92px;
+  border-radius: 22px;
 }
 
 .avatar-rail {
@@ -2695,6 +2715,403 @@ code {
   flex: none;
 }
 
+/* Servidores locales */
+
+.section-head-row {
+  display: flex;
+  align-items: flex-end;
+  justify-content: space-between;
+  gap: 14px;
+  margin: 4px 0 2px;
+}
+
+.section-head-row-spaced {
+  margin-top: 24px;
+}
+
+.section-head-row h3 {
+  margin: 0;
+  font-family: var(--font-display);
+  font-size: 14px;
+  font-weight: 700;
+  letter-spacing: -0.01em;
+}
+
+.section-head-row p {
+  margin: 4px 0 0;
+  font-size: 11px;
+  color: var(--muted);
+}
+
+.server-icon.local {
+  background: linear-gradient(150deg, rgba(52, 211, 153, 0.16), rgba(52, 211, 153, 0.04));
+  border-color: color-mix(in srgb, var(--green) 22%, transparent);
+  color: var(--green);
+}
+
+.local-server-card .server-address {
+  font-family: var(--font);
+}
+
+.server-status.idle {
+  color: var(--muted);
+}
+
+.server-status.installing,
+.server-status.starting,
+.server-status.stopping {
+  color: var(--yellow);
+}
+
+.server-status.running {
+  color: var(--green);
+}
+
+.server-status.error {
+  color: var(--red);
+}
+
+.server-console-toolbar {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  gap: 12px;
+  margin-bottom: 8px;
+}
+
+.server-console-toolbar .server-status {
+  margin-top: 0;
+}
+
+.server-console-tools {
+  display: flex;
+  align-items: center;
+  gap: 12px;
+}
+
+.server-console-output {
+  height: min(46vh, 340px);
+  margin: 0;
+  padding: 12px 14px;
+  overflow: auto;
+  border-radius: 12px;
+  border: 1px solid var(--line);
+  background: #070a10;
+  font-family: var(--mono);
+  font-size: 10.5px;
+  line-height: 1.6;
+  color: #b9c5d8;
+  white-space: pre-wrap;
+  word-break: break-word;
+  user-select: text;
+  outline: none;
+}
+
+.server-console-output:empty::before {
+  content: "La consola está vacía. Inicia el servidor para ver su actividad aquí.";
+  color: var(--dim);
+}
+
+.server-console-form {
+  display: flex;
+  align-items: center;
+  gap: 8px;
+  margin-top: 10px;
+}
+
+.server-console-form .text-input {
+  flex: 1;
+  height: 36px;
+}
+
+.server-console-prompt {
+  color: var(--accent);
+  font-size: 13px;
+}
+
+.server-form-grid.two {
+  grid-template-columns: 1fr 1fr;
+  margin-bottom: 10px;
+}
+
+.local-memory-row {
+  display: flex;
+  align-items: center;
+  gap: 7px;
+  font-size: 10px;
+  color: var(--muted);
+}
+
+.local-memory-row .text-input {
+  height: 40px;
+  padding: 0 8px;
+}
+
+.inline-link {
+  padding: 0;
+  border: 0;
+  background: none;
+  color: var(--accent-strong);
+  font: inherit;
+  cursor: pointer;
+  text-decoration: underline;
+  text-underline-offset: 2px;
+}
+
+.inline-link:hover {
+  color: var(--text);
+}
+
+@media (max-width: 640px) {
+  .server-form-grid.two {
+    grid-template-columns: 1fr;
+  }
+}
+
+/* --------------------------------------------------------------------------
+   Cuentas Microsoft
+   -------------------------------------------------------------------------- */
+
+.login-divider {
+  display: flex;
+  align-items: center;
+  gap: 10px;
+  margin: 18px 0 14px;
+  font-size: 9px;
+  font-weight: 700;
+  letter-spacing: 1.4px;
+  text-transform: uppercase;
+  color: var(--dim);
+}
+
+.login-divider::before,
+.login-divider::after {
+  content: '';
+  flex: 1;
+  height: 1px;
+  background: var(--line);
+}
+
+.login-microsoft {
+  height: 46px;
+  border-color: var(--line-strong);
+  background: rgba(255, 255, 255, 0.03);
+}
+
+.login-microsoft:hover {
+  border-color: color-mix(in srgb, var(--accent) 42%, transparent);
+  background: var(--accent-soft);
+}
+
+.login-microsoft .icon {
+  width: 16px;
+  height: 16px;
+  color: var(--accent);
+}
+
+.login-msa-note {
+  margin-top: 9px;
+  font-size: 9.5px;
+  line-height: 1.5;
+  color: var(--dim);
+  text-align: center;
+}
+
+.saved-account-name {
+  display: flex;
+  align-items: center;
+  gap: 5px;
+}
+
+.saved-account-name .icon {
+  width: 12px;
+  height: 12px;
+  flex: none;
+  color: var(--accent);
+}
+
+.saved-account-meta.is-expired {
+  color: #f0b375;
+}
+
+.account-msa {
+  margin-top: 16px;
+  padding: 12px;
+  border-radius: 13px;
+  border: 1px solid color-mix(in srgb, var(--accent) 18%, transparent);
+  background: rgba(255, 255, 255, 0.02);
+}
+
+.account-msa-head {
+  display: flex;
+  align-items: center;
+  gap: 10px;
+}
+
+.account-msa-icon {
+  display: grid;
+  place-items: center;
+  width: 36px;
+  height: 36px;
+  flex: none;
+  border-radius: 10px;
+  color: var(--accent);
+  background: color-mix(in srgb, var(--accent) 12%, transparent);
+  border: 1px solid color-mix(in srgb, var(--accent) 22%, transparent);
+}
+
+.account-msa-icon .icon {
+  width: 16px;
+  height: 16px;
+}
+
+.account-msa-copy {
+  display: flex;
+  flex-direction: column;
+  gap: 2px;
+  min-width: 0;
+  flex: 1;
+}
+
+.account-msa-copy strong {
+  font-size: 12.5px;
+  font-weight: 650;
+}
+
+.account-msa-copy small {
+  font-size: 9.5px;
+  line-height: 1.45;
+  color: var(--muted);
+}
+
+.account-msa .account-list {
+  margin-top: 10px;
+}
+
+.account-row-meta {
+  display: flex;
+  align-items: center;
+  gap: 4px;
+  margin-top: 1px;
+  font-size: 9px;
+  color: var(--muted);
+}
+
+.account-row-meta .icon {
+  width: 10px;
+  height: 10px;
+  flex: none;
+}
+
+.account-row-meta.on {
+  color: var(--green);
+}
+
+.account-row-meta.off {
+  color: var(--yellow);
+}
+
+.msa-state {
+  display: inline-flex;
+  align-items: center;
+  gap: 4px;
+  flex: none;
+  padding: 3px 7px;
+  border-radius: 999px;
+  font-size: 9px;
+  font-weight: 650;
+}
+
+.msa-state .icon {
+  width: 10px;
+  height: 10px;
+}
+
+.msa-state.on {
+  color: #79e0a8;
+  background: rgba(60, 210, 130, 0.12);
+  border: 1px solid rgba(60, 210, 130, 0.25);
+}
+
+.msa-state.off {
+  color: #f0b375;
+  background: rgba(240, 170, 90, 0.11);
+  border: 1px solid rgba(240, 170, 90, 0.24);
+}
+
+.account-empty {
+  padding: 10px 12px;
+  border-radius: 10px;
+  border: 1px dashed var(--line);
+  font-size: 10.5px;
+  line-height: 1.5;
+  color: var(--muted);
+}
+
+.account-note {
+  display: flex;
+  align-items: flex-start;
+  gap: 6px;
+  margin-top: 12px;
+  font-size: 9.5px;
+  line-height: 1.5;
+  color: var(--dim);
+}
+
+.account-note .icon {
+  width: 12px;
+  height: 12px;
+  flex: none;
+  margin-top: 1px;
+}
+
+.badge-online {
+  color: #79e0a8;
+  background: rgba(60, 210, 130, 0.12);
+  border: 1px solid rgba(60, 210, 130, 0.25);
+}
+
+.msa-code-box {
+  display: flex;
+  align-items: center;
+  gap: 10px;
+  margin: 12px 0 4px;
+  padding: 14px 16px;
+  border-radius: 12px;
+  border: 1px dashed color-mix(in srgb, var(--accent) 35%, transparent);
+  background: color-mix(in srgb, var(--accent) 6%, transparent);
+}
+
+.msa-code-box strong {
+  flex: 1;
+  font-family: ui-monospace, Consolas, monospace;
+  font-size: 26px;
+  font-weight: 700;
+  letter-spacing: 0.16em;
+  color: var(--text);
+}
+
+.msa-status-line {
+  display: flex;
+  align-items: center;
+  gap: 8px;
+  margin-top: 10px;
+  font-size: 11px;
+  color: var(--text-soft);
+}
+
+.msa-status-line .icon {
+  width: 14px;
+  height: 14px;
+  color: #79e0a8;
+}
+
+@media (max-width: 1180px) {
+  .account-msa-head {
+    flex-wrap: wrap;
+  }
+}
+
 /* --------------------------------------------------------------------------
    Ajustes
    -------------------------------------------------------------------------- */
@@ -3567,6 +3984,234 @@ input[type="range"]::-webkit-slider-thumb:active {
 
 .account-hero .badge {
   margin-left: auto;
+}
+
+.account-facts {
+  display: grid;
+  grid-template-columns: minmax(0, 1.5fr) minmax(0, 1fr) minmax(0, 0.7fr);
+  gap: 7px;
+  margin-top: 9px;
+}
+
+.account-facts > div {
+  min-width: 0;
+  padding: 8px 10px;
+  border-radius: 10px;
+  border: 1px solid var(--line);
+  background: rgba(255, 255, 255, 0.025);
+}
+
+.account-facts span {
+  display: block;
+  font-size: 7.5px;
+  font-weight: 700;
+  letter-spacing: 0.11em;
+  text-transform: uppercase;
+  color: var(--muted);
+}
+
+.account-facts code,
+.account-facts strong {
+  display: block;
+  margin-top: 3px;
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+  font-size: 9.5px;
+  font-weight: 600;
+  color: var(--text-soft);
+}
+
+.skin-preview {
+  display: flex;
+  gap: 12px;
+  margin-top: 4px;
+}
+
+.skin-face-card {
+  flex: 1;
+  min-width: 0;
+  display: flex;
+  flex-direction: column;
+  align-items: center;
+  justify-content: center;
+  gap: 7px;
+  padding: 18px 14px;
+  text-align: center;
+  border-radius: 14px;
+  border: 1px solid color-mix(in srgb, var(--accent) 18%, transparent);
+  background: linear-gradient(150deg, var(--accent-soft), rgba(255, 255, 255, 0.02));
+}
+
+.skin-face-card strong {
+  font-size: 14px;
+  font-weight: 700;
+}
+
+.skin-face-card small {
+  max-width: 190px;
+  font-size: 9px;
+  line-height: 1.5;
+  color: var(--muted);
+}
+
+.skin-sheet-card {
+  width: 150px;
+  flex: none;
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  padding: 10px;
+  border-radius: 14px;
+  border: 1px solid var(--line);
+  background: rgba(0, 0, 0, 0.22);
+}
+
+.skin-sheet {
+  width: 128px;
+  height: 128px;
+  border-radius: 6px;
+  image-rendering: pixelated;
+}
+
+.skin-empty {
+  display: flex;
+  flex-direction: column;
+  align-items: center;
+  gap: 6px;
+  font-size: 9px;
+  color: var(--muted);
+}
+
+.account-switcher {
+  position: fixed;
+  z-index: 90;
+  width: 336px;
+  max-height: min(70vh, 540px);
+  overflow: auto;
+  padding: 10px;
+  border-radius: 15px;
+  border: 1px solid var(--line-strong);
+  background: var(--panel);
+  box-shadow: 0 24px 70px rgba(0, 0, 0, 0.6);
+}
+
+.account-switcher-head {
+  display: flex;
+  align-items: flex-start;
+  justify-content: space-between;
+  gap: 10px;
+  padding: 3px 5px 9px;
+}
+
+.account-switcher-head .eyebrow {
+  font-size: 7.5px;
+}
+
+.account-switcher-head strong {
+  display: block;
+  margin-top: 3px;
+  font-size: 14px;
+  font-weight: 700;
+  letter-spacing: -0.2px;
+}
+
+.account-switcher-list {
+  display: flex;
+  flex-direction: column;
+  gap: 3px;
+}
+
+.account-switcher-row {
+  display: flex;
+  align-items: center;
+  gap: 9px;
+  width: 100%;
+  padding: 8px;
+  border-radius: 10px;
+  border: 1px solid transparent;
+  background: none;
+  color: var(--text);
+  text-align: left;
+  cursor: pointer;
+}
+
+.account-switcher-row:hover {
+  background: rgba(255, 255, 255, 0.045);
+}
+
+.account-switcher-row.active {
+  border-color: color-mix(in srgb, var(--accent) 24%, transparent);
+  background: var(--accent-soft);
+}
+
+.account-switcher-row .avatar {
+  width: 30px;
+  height: 30px;
+  border-radius: 8px;
+}
+
+.account-switcher-copy {
+  flex: 1;
+  min-width: 0;
+  display: flex;
+  flex-direction: column;
+}
+
+.account-switcher-copy strong {
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+  font-size: 11.5px;
+  font-weight: 650;
+}
+
+.account-switcher-copy small {
+  margin-top: 2px;
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+  font-size: 8.5px;
+  color: var(--muted);
+}
+
+.switcher-state {
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+  width: 22px;
+  height: 22px;
+  flex: none;
+  border-radius: 7px;
+  color: var(--muted);
+}
+
+.switcher-state .icon {
+  width: 13px;
+  height: 13px;
+}
+
+.switcher-state.on {
+  color: var(--green);
+  background: var(--green-soft);
+}
+
+.switcher-state.off {
+  color: var(--yellow);
+  background: var(--yellow-soft);
+}
+
+.account-switcher-foot {
+  display: flex;
+  gap: 6px;
+  margin-top: 8px;
+  padding-top: 8px;
+  border-top: 1px solid var(--line);
+}
+
+.account-switcher-foot .btn {
+  flex: 1;
+  justify-content: center;
 }
 
 .account-list {
@@ -5822,6 +6467,37 @@ input[type="range"]::-webkit-slider-thumb:active {
   opacity: 0.58;
 }
 
+/* Historial de sesiones: dentro del modal ocupa una sola columna. */
+.session-list {
+  grid-template-columns: 1fr;
+  max-height: 52vh;
+  overflow-y: auto;
+  padding-right: 4px;
+  margin: 4px 0 18px;
+}
+
+.session-row .mod-main {
+  display: grid;
+  gap: 2px;
+  min-width: 0;
+}
+
+.session-row .mod-main strong {
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
+
+.session-row .content-actions .badge {
+  white-space: nowrap;
+}
+
+.session-badge-danger {
+  color: var(--red);
+  border-color: color-mix(in srgb, var(--red) 30%, transparent);
+  background: var(--red-soft);
+}
+
 .content-icon {
   display: grid;
   place-items: center;
@@ -7035,5 +7711,306 @@ input[type="range"]::-webkit-slider-thumb:active {
   }
   .ai-foot-note {
     display: none;
+  }
+}
+
+/* -------------------------------------------------------------------------- */
+/*              Importar instancias de otros launchers (in-place)             */
+/* -------------------------------------------------------------------------- */
+
+.launcher-import {
+  gap: 14px;
+}
+
+.launcher-import-block,
+.launcher-scan {
+  display: flex;
+  flex-direction: column;
+  gap: 8px;
+}
+
+.launcher-import-head {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  gap: 10px;
+}
+
+.launcher-import-head .link-btn {
+  display: inline-flex;
+  align-items: center;
+  gap: 5px;
+  font-size: 10px;
+}
+
+.launcher-import-head .link-btn .icon {
+  width: 12px;
+  height: 12px;
+}
+
+.launcher-detect-list {
+  display: flex;
+  flex-direction: column;
+  gap: 6px;
+}
+
+.launcher-detect-row {
+  display: flex;
+  align-items: center;
+  gap: 10px;
+  width: 100%;
+  padding: 9px 10px;
+  border-radius: 10px;
+  border: 1px solid var(--line);
+  background: rgba(255, 255, 255, 0.025);
+  color: inherit;
+  text-align: left;
+  cursor: pointer;
+  transition: border-color 0.15s ease, background 0.15s ease;
+}
+
+.launcher-detect-row:hover,
+.launcher-detect-row.active {
+  border-color: color-mix(in srgb, var(--accent) 45%, transparent);
+  background: var(--accent-soft);
+}
+
+.launcher-detect-row > .icon {
+  width: 14px;
+  height: 14px;
+  margin-left: auto;
+  color: var(--muted);
+  flex: 0 0 auto;
+}
+
+.launcher-detect-icon {
+  display: grid;
+  place-items: center;
+  width: 32px;
+  height: 32px;
+  border-radius: 9px;
+  background: var(--accent-soft);
+  color: var(--accent);
+  flex: 0 0 auto;
+}
+
+.launcher-detect-icon .icon {
+  width: 16px;
+  height: 16px;
+}
+
+.launcher-detect-copy {
+  display: flex;
+  flex-direction: column;
+  gap: 2px;
+  min-width: 0;
+  flex: 1;
+}
+
+.launcher-detect-copy strong {
+  font-size: 11px;
+  font-weight: 600;
+}
+
+.launcher-detect-copy small {
+  font-size: 9.5px;
+  color: var(--muted);
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
+
+.launcher-detect-count {
+  padding: 3px 7px;
+  border-radius: 999px;
+  background: var(--accent-soft);
+  color: var(--accent);
+  font-size: 9.5px;
+  white-space: nowrap;
+  flex: 0 0 auto;
+}
+
+.launcher-detect-count.muted {
+  background: rgba(255, 255, 255, 0.05);
+  color: var(--muted);
+}
+
+.launcher-detect-state {
+  display: flex;
+  align-items: center;
+  gap: 8px;
+  padding: 12px 10px;
+  border-radius: 10px;
+  border: 1px dashed var(--line);
+  color: var(--muted);
+  font-size: 10px;
+  line-height: 1.5;
+}
+
+.launcher-detect-state.warn {
+  color: var(--yellow);
+  border-color: rgba(251, 191, 36, 0.28);
+}
+
+.launcher-detect-state .icon {
+  width: 15px;
+  height: 15px;
+  flex: 0 0 auto;
+}
+
+.launcher-detect-state .spinner {
+  width: 13px;
+  height: 13px;
+  flex: 0 0 auto;
+}
+
+.launcher-manual-row {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  gap: 12px;
+  padding: 10px;
+  border-radius: 10px;
+  border: 1px solid var(--line);
+  background: rgba(255, 255, 255, 0.02);
+}
+
+.launcher-manual-copy {
+  display: flex;
+  flex-direction: column;
+  gap: 3px;
+  min-width: 0;
+}
+
+.launcher-manual-row .btn {
+  flex: 0 0 auto;
+}
+
+.launcher-scan {
+  padding-top: 12px;
+  border-top: 1px solid var(--line);
+}
+
+.launcher-scan-head {
+  display: flex;
+  align-items: flex-start;
+  justify-content: space-between;
+  gap: 12px;
+}
+
+.launcher-scan-title {
+  display: flex;
+  flex-direction: column;
+  gap: 2px;
+  min-width: 0;
+}
+
+.launcher-scan-title strong {
+  font-size: 11px;
+}
+
+.launcher-scan-title small {
+  font-size: 9.5px;
+  color: var(--muted);
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
+
+.launcher-scan .check-row {
+  margin: 0;
+  font-size: 10px;
+  flex: 0 0 auto;
+}
+
+.launcher-scan-list {
+  display: flex;
+  flex-direction: column;
+  gap: 5px;
+  max-height: 300px;
+  overflow-y: auto;
+  padding-right: 2px;
+}
+
+.launcher-instance {
+  display: flex;
+  align-items: flex-start;
+  gap: 9px;
+  padding: 8px 10px;
+  border-radius: 9px;
+  border: 1px solid var(--line);
+  background: rgba(255, 255, 255, 0.02);
+  cursor: pointer;
+}
+
+.launcher-instance:has(input:checked) {
+  border-color: color-mix(in srgb, var(--accent) 40%, transparent);
+  background: var(--accent-soft);
+}
+
+.launcher-instance.is-added {
+  opacity: 0.65;
+  cursor: default;
+}
+
+.launcher-instance input {
+  margin-top: 2px;
+  accent-color: var(--accent);
+  flex: 0 0 auto;
+}
+
+.launcher-instance-copy {
+  display: flex;
+  flex-direction: column;
+  gap: 2px;
+  min-width: 0;
+  flex: 1;
+}
+
+.launcher-instance-name {
+  display: flex;
+  align-items: center;
+  gap: 6px;
+  flex-wrap: wrap;
+  font-size: 10.5px;
+  font-weight: 600;
+}
+
+.launcher-instance-name .badge {
+  padding: 2px 5px;
+  font-size: 8.5px;
+}
+
+.launcher-instance-meta {
+  display: flex;
+  align-items: center;
+  gap: 8px;
+  flex-wrap: wrap;
+  color: var(--muted);
+  font-size: 9.5px;
+}
+
+.launcher-instance-meta small {
+  font-size: 9px;
+}
+
+.launcher-instance-path {
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+  color: var(--muted);
+  font-size: 8.5px;
+  opacity: 0.75;
+}
+
+.modal-actions-lead {
+  margin-right: auto;
+}
+
+@media (max-width: 620px) {
+  .launcher-manual-row,
+  .launcher-scan-head {
+    flex-direction: column;
+    align-items: stretch;
   }
 }

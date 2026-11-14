@@ -48,17 +48,40 @@ contextBridge.exposeInMainWorld('nexy', {
     analyzeLogs: (id) => invoke('instances:analyzeLogs', id)
   },
 
+  launchers: {
+    detect: () => invoke('launchers:detect'),
+    scan: (payload) => invoke('launchers:scan', payload),
+    pickRoot: () => invoke('launchers:pickRoot'),
+    import: (payload) => invoke('launchers:import', payload)
+  },
+
   accounts: {
     add: (name) => invoke('accounts:add', name),
     activate: (id) => invoke('accounts:activate', id),
     remove: (id) => invoke('accounts:remove', id),
-    logout: () => invoke('accounts:logout')
+    logout: () => invoke('accounts:logout'),
+    signOutMicrosoft: (id) => invoke('accounts:signOutMicrosoft', id),
+    skin: (id) => invoke('accounts:skin', id),
+    pickSkin: (id) => invoke('accounts:pickSkin', id),
+    resetSkin: (id) => invoke('accounts:resetSkin', id)
   },
 
   servers: {
     save: (server) => invoke('servers:save', server),
     remove: (id) => invoke('servers:remove', id),
     ping: (address) => invoke('servers:ping', address)
+  },
+
+  localServers: {
+    list: () => invoke('localservers:list'),
+    suggestPort: () => invoke('localservers:suggestPort'),
+    create: (payload) => invoke('localservers:create', payload),
+    start: (id) => invoke('localservers:start', id),
+    stop: (id) => invoke('localservers:stop', id),
+    command: (payload) => invoke('localservers:command', payload),
+    logs: (id) => invoke('localservers:logs', id),
+    remove: (id) => invoke('localservers:remove', id),
+    openFolder: (payload) => invoke('localservers:openFolder', payload)
   },
 
   versions: {
@@ -120,6 +143,15 @@ contextBridge.exposeInMainWorld('nexy', {
     open: (name) => invoke('worlds:open', name)
   },
 
+  sessions: {
+    list: () => invoke('sessions:list'),
+    clear: () => invoke('sessions:clear')
+  },
+
+  logs: {
+    share: (payload) => invoke('logs:share', payload)
+  },
+
   screenshots: {
     list: () => invoke('screenshots:list'),
     read: (file) => invoke('screenshots:read', file),
@@ -142,13 +174,22 @@ contextBridge.exposeInMainWorld('nexy', {
   java: {
     detect: (force = false) => invoke('java:detect', force === true),
     pick: (requiredMajor) => invoke('dialog:pickJava', requiredMajor),
-    install: (major) => invoke('java:install', { major })
+    install: (major) => invoke('java:install', { major }),
+    auto: (major) => invoke('java:auto', { major })
   },
 
   launch: {
     start: (payload) => invoke('launch:start', payload),
     cancel: () => invoke('launch:cancel'),
     status: () => invoke('launch:isRunning')
+  },
+
+  msa: {
+    status: () => invoke('msa:status'),
+    begin: () => invoke('msa:begin'),
+    cancel: () => invoke('msa:cancel'),
+    signOut: (accountId) => invoke('msa:signOut', accountId),
+    onStatus: (callback) => subscribe('msa:status', callback)
   },
 
   openFolder: (key) => invoke('app:openFolder', key),
@@ -166,5 +207,6 @@ contextBridge.exposeInMainWorld('nexy', {
   onModsProgress: (callback) => subscribe('mods:progress', callback),
   onInstancesProgress: (callback) => subscribe('instances:progress', callback),
   onJavaUpdate: (callback) => subscribe('system:java', callback),
-  onJavaInstallProgress: (callback) => subscribe('java:install-progress', callback)
+  onJavaInstallProgress: (callback) => subscribe('java:install-progress', callback),
+  onLocalServerEvent: (callback) => subscribe('localserver:event', callback)
 });

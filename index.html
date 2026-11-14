@@ -4,7 +4,7 @@
   <meta charset="UTF-8">
   <meta name="viewport" content="width=device-width, initial-scale=1.0">
   <meta http-equiv="Content-Security-Policy" content="default-src 'self'; img-src 'self' data: https:; style-src 'self' 'unsafe-inline'; script-src 'self'; font-src 'self'; connect-src 'none'; object-src 'none'; base-uri 'self'; form-action 'none'">
-  <title>NexyLauncher 1.0</title>
+  <title>NexyLauncher 1.1</title>
   <link rel="stylesheet" href="style.css">
 </head>
 <body>
@@ -26,6 +26,7 @@
     <symbol id="i-refresh" viewBox="0 0 24 24"><path d="M21 2v6h-6"/><path d="M3 12a9 9 0 0 1 15-6.7L21 8"/><path d="M3 22v-6h6"/><path d="M21 12a9 9 0 0 1-15 6.7L3 16"/></symbol>
     <symbol id="i-monitor" viewBox="0 0 24 24"><rect x="2" y="3" width="20" height="14" rx="2"/><path d="M8 21h8M12 17v4"/></symbol>
     <symbol id="i-cpu" viewBox="0 0 24 24"><rect x="4" y="4" width="16" height="16" rx="2"/><rect x="9" y="9" width="6" height="6"/><path d="M9 1v3M15 1v3M9 20v3M15 20v3M1 9h3M1 15h3M20 9h3M20 15h3"/></symbol>
+    <symbol id="i-windows" viewBox="0 0 24 24"><path d="M3 4.7 10.6 3.6v7.9H3zM12.1 3.4 21 2.1v9.4h-8.9zM3 12.9h7.6v7.9L3 19.7zM12.1 12.9H21v9.2l-8.9-1.3z" fill="currentColor" stroke="none"/></symbol>
     <symbol id="i-coffee" viewBox="0 0 24 24"><path d="M18 8h1a4 4 0 0 1 0 8h-1"/><path d="M2 8h16v9a4 4 0 0 1-4 4H6a4 4 0 0 1-4-4z"/><path d="M6 1v3M10 1v3M14 1v3"/></symbol>
     <symbol id="i-info" viewBox="0 0 24 24"><circle cx="12" cy="12" r="10"/><path d="M12 16v-4M12 8h.01"/></symbol>
     <symbol id="i-external" viewBox="0 0 24 24"><path d="M18 13v6a2 2 0 0 1-2 2H5a2 2 0 0 1-2-2V8a2 2 0 0 1 2-2h6"/><path d="M15 3h6v6"/><path d="M10 14 21 3"/></symbol>
@@ -119,14 +120,14 @@
             <span class="logo-cube"><i>N</i></span>
             <div>
               <h1>NEXY<span>LAUNCHER</span></h1>
-              <p class="logo-version">VERSIÓN 1.0</p>
+              <p class="logo-version">VERSIÓN 1.1</p>
             </div>
           </div>
-          <p class="login-tagline">Tu Minecraft. Sin cuentas premium, sin complicaciones.</p>
+          <p class="login-tagline">Tu Minecraft. Offline o con tu cuenta Microsoft.</p>
           <ul class="login-features">
             <li><span class="feature-icon"><svg class="icon"><use href="#i-download"></use></svg></span><div><strong>Descarga automática</strong><small>Versiones, recursos y librerías desde Mojang.</small></div></li>
             <li><span class="feature-icon"><svg class="icon"><use href="#i-box"></use></svg></span><div><strong>Mods bajo control</strong><small>Activa, desactiva y organiza tus .jar.</small></div></li>
-            <li><span class="feature-icon"><svg class="icon"><use href="#i-shield"></use></svg></span><div><strong>Cuentas offline</strong><small>Tus perfiles se guardan en este equipo.</small></div></li>
+            <li><span class="feature-icon"><svg class="icon"><use href="#i-shield"></use></svg></span><div><strong>Offline y Microsoft</strong><small>Perfiles en este equipo y sesión Microsoft temporal.</small></div></li>
           </ul>
         </div>
         <div class="login-visual-foot">
@@ -148,7 +149,7 @@
         <div class="login-card">
           <span class="eyebrow">BIENVENIDO A NEXY</span>
           <h2>Entra a jugar</h2>
-          <p class="login-desc">Elige un nombre de jugador. No necesitas cuenta de Microsoft ni conexión a internet para usar el launcher.</p>
+          <p class="login-desc">Elige un nombre para una cuenta offline o inicia sesión con Microsoft para jugar con tu cuenta real de Java Edition.</p>
 
           <form id="login-form" novalidate>
             <label class="field-label" for="login-username">Nombre de jugador</label>
@@ -164,6 +165,14 @@
             </button>
           </form>
 
+          <div class="login-divider"><span>o</span></div>
+
+          <button type="button" class="btn btn-ghost btn-lg w-full login-microsoft" id="login-microsoft">
+            <svg class="icon"><use href="#i-windows"></use></svg>
+            Iniciar sesión con Microsoft
+          </button>
+          <p class="login-msa-note">Cuenta de Minecraft: Java Edition. Verás un código temporal: no pedimos tu contraseña y no guardamos tokens.</p>
+
           <div class="saved-accounts-wrap" id="saved-accounts-wrap" hidden>
             <div class="saved-head">
               <span>Perfiles guardados</span>
@@ -174,7 +183,7 @@
 
           <div class="offline-note">
             <svg class="icon"><use href="#i-info"></use></svg>
-            <p><strong>Cuentas offline.</strong> Servidores con verificación premium pueden rechazar tu conexión. Es normal: no estás usando una cuenta de Microsoft.</p>
+            <p><strong>Cuentas offline y Microsoft.</strong> Los perfiles se guardan en este equipo. La sesión de Microsoft es temporal: se cierra al salir y no se guardan tokens.</p>
           </div>
         </div>
         <div class="login-foot">
@@ -186,7 +195,7 @@
 
     <section id="screen-app" class="screen screen-app">
       <aside class="rail">
-        <div class="rail-logo" title="NexyLauncher 1.0">N</div>
+        <div class="rail-logo" title="NexyLauncher 1.1">N</div>
         <nav class="rail-nav" aria-label="Navegación principal">
           <button class="rail-btn active" data-page="home" data-tip="Inicio" aria-label="Inicio"><svg class="icon"><use href="#i-home"></use></svg></button>
           <button class="rail-btn" data-page="instances" data-tip="Instancias" aria-label="Instancias"><svg class="icon"><use href="#i-grid"></use></svg></button>
@@ -258,7 +267,7 @@
                       <div class="profile-pill">
                         <span class="avatar avatar-md" id="hero-avatar"></span>
                         <span class="profile-pill-text"><small>JUGANDO COMO</small><strong id="hero-username">Jugador</strong></span>
-                        <span class="badge badge-soft">Cuentas offline</span>
+                        <span class="badge badge-soft" id="hero-account-type">Cuenta offline</span>
                       </div>
                       <div class="hero-badges">
                         <span class="pill glass" id="pill-latest"><svg class="icon"><use href="#i-sparkles"></use></svg><span>—</span></span>
@@ -274,6 +283,7 @@
                           <span><svg class="icon"><use href="#i-clock"></use></svg><span id="hero-meta-type">—</span></span>
                           <span><svg class="icon"><use href="#i-drive"></use></svg><span id="hero-meta-status">—</span></span>
                           <span><svg class="icon"><use href="#i-coffee"></use></svg><span id="hero-meta-java">Java automático</span></span>
+                          <span id="hero-meta-session-wrap" hidden><svg class="icon"><use href="#i-archive"></use></svg><span id="hero-meta-session">—</span></span>
                         </div>
                       </div>
                       <div class="launch-card">
@@ -389,7 +399,7 @@
 
                 <section class="tip-card">
                   <span class="tip-icon"><svg class="icon"><use href="#i-shield"></use></svg></span>
-                  <div><strong>Cuentas offline</strong><p>Sin telemetría ni inicio de sesión externo. Tus perfiles y ajustes se quedan en tu PC.</p></div>
+                  <div><strong>Offline y Microsoft</strong><p>Perfiles y ajustes se quedan en tu PC. La sesión de Microsoft es temporal y no guarda tokens.</p></div>
                 </section>
               </aside>
             </div>
@@ -533,16 +543,33 @@
           <section id="page-servers" class="page">
             <div class="page-inner">
               <div class="page-head-row">
-                <div><h2>Servidores</h2><p>Guarda tus servidores favoritos y entra con un solo clic.</p></div>
+                <div><h2>Servidores</h2><p>Guarda tus servidores favoritos, entra con un solo clic y crea tu propio servidor local.</p></div>
                 <div class="head-actions">
                   <button id="btn-refresh-servers" class="btn btn-ghost"><svg class="icon"><use href="#i-refresh"></use></svg>Comprobar estado</button>
                   <button id="btn-add-server" class="btn btn-primary"><svg class="icon"><use href="#i-plus"></use></svg>Añadir servidor</button>
                 </div>
               </div>
 
+              <div class="section-head-row">
+                <div><h3>Servidores locales</h3><p>Crea un servidor de Minecraft en tu equipo y adminístralo desde aquí.</p></div>
+                <button id="btn-new-local-server" class="btn btn-ghost"><svg class="icon"><use href="#i-plus"></use></svg>Crear servidor</button>
+              </div>
+
+              <div id="local-servers-list" class="servers-grid"></div>
+              <div id="local-servers-empty" class="empty-state compact" hidden>
+                <span class="empty-icon"><svg class="icon"><use href="#i-server"></use></svg></span>
+                <h3>Todavía no tienes un servidor local</h3>
+                <p>Crea uno con la versión que quieras, inícialo y comparte tu IP con tus amigos.</p>
+                <button class="btn btn-primary" id="btn-new-local-server-empty"><svg class="icon"><use href="#i-plus"></use></svg>Crear mi primer servidor</button>
+              </div>
+
+              <div class="section-head-row section-head-row-spaced">
+                <div><h3>Servidores guardados</h3><p>Direcciones favoritas para conectarte directamente.</p></div>
+              </div>
+
               <div class="banner banner-warn">
                 <span class="banner-icon"><svg class="icon"><use href="#i-wifi-off"></use></svg></span>
-                <div><strong>Recuerda: usas cuentas offline</strong><p>Los servidores con <code>online-mode=true</code> no permitirán tu entrada. Busca servidores "cracked" u offline, o monta uno propio. El launcher usa el nombre que elegiste como identidad.</p></div>
+                <div><strong>Cuentas offline y Microsoft</strong><p>Las cuentas offline usan el nombre que elegiste como identidad y los servidores con verificación premium las rechazarán. Con una cuenta Microsoft activa sí puedes entrar.</p></div>
               </div>
 
               <div id="servers-list" class="servers-grid"></div>
@@ -638,6 +665,29 @@
 
                 <section class="panel settings-card">
                   <div class="settings-card-head">
+                    <span class="settings-icon"><svg class="icon"><use href="#i-archive"></use></svg></span>
+                    <div><h3>Copias y sesiones</h3><p>Protege tus mundos y revisa tus partidas</p></div>
+                  </div>
+                  <div class="setting-row">
+                    <div><strong>Copiar el mundo antes de jugar</strong><small>Solo los mundos que hayan cambiado desde la última copia</small></div>
+                    <label class="switch"><input type="checkbox" id="setting-autobackup"><span class="switch-track"></span></label>
+                  </div>
+                  <div class="setting-row">
+                    <div><strong>Copias por mundo</strong><small>Las más antiguas se borran al superar este número</small></div>
+                    <input id="setting-backup-keep" class="text-input" type="number" min="1" max="50" step="1" value="6" style="width:88px">
+                  </div>
+                  <div class="setting-row">
+                    <div><strong>Historial de sesiones</strong><small>Versión, instancia, duración y resultado de cada partida</small></div>
+                    <button class="btn btn-ghost btn-sm" id="btn-session-history">Ver historial</button>
+                  </div>
+                  <div class="setting-row">
+                    <div><strong>Compartir último registro</strong><small>Lo sube a mclo.gs y copia el enlace para pegarlo</small></div>
+                    <button class="btn btn-ghost btn-sm" id="btn-share-last-log">Subir a mclo.gs</button>
+                  </div>
+                </section>
+
+                <section class="panel settings-card">
+                  <div class="settings-card-head">
                     <span class="settings-icon"><svg class="icon"><use href="#i-cpu"></use></svg></span>
                     <div><h3>Rendimiento</h3><p>Memoria y argumentos de la JVM</p></div>
                   </div>
@@ -680,10 +730,10 @@
                         <svg class="icon select-caret"><use href="#i-chevron-down"></use></svg>
                       </div>
                       <button id="btn-browse-java" class="btn btn-ghost">Examinar</button>
-                <button id="btn-install-java" class="btn btn-ghost">Instalar</button>
+                      <button id="btn-install-java" class="btn btn-ghost">Instalar Java</button>
                       <button id="btn-detect-java" class="icon-btn bordered" title="Volver a detectar" aria-label="Volver a detectar Java"><svg class="icon"><use href="#i-refresh"></use></svg></button>
                     </div>
-                    <p class="help-text" id="java-help">En automático se elige la mejor versión disponible para cada versión de Minecraft.</p>
+                    <p class="help-text" id="java-help">En automático se elige la mejor versión disponible. Instalar Java descarga el JRE necesario en la carpeta del launcher.</p>
                     <div id="java-list" class="java-list"></div>
                   </div>
                   <div class="setting-row">
@@ -841,7 +891,7 @@
                   </div>
                   <ul class="changelog-list">
                     <li class="changelog-item">
-                      <span class="changelog-badge" id="changelog-version">1.0.0</span>
+                      <span class="changelog-badge" id="changelog-version">1.1.0</span>
                       <div><strong>Asistente de ayuda</strong><p>Chat integrado para resolver dudas, revisar crashes y aplicar arreglos automáticos.</p></div>
                     </li>
                     <li class="changelog-item">
@@ -858,7 +908,7 @@
                 <section class="panel settings-card">
                   <div class="settings-card-head">
                     <span class="settings-icon"><svg class="icon"><use href="#i-info"></use></svg></span>
-                    <div><h3>Acerca de</h3><p>NexyLauncher 1.0</p></div>
+                    <div><h3>Acerca de</h3><p>NexyLauncher 1.1</p></div>
                   </div>
                   <div class="about-rows">
                     <div><span>Versión del launcher</span><strong id="about-version">—</strong></div>
@@ -902,6 +952,7 @@
         <div class="console-head">
           <div class="console-title"><svg class="icon"><use href="#i-terminal"></use></svg><strong>Consola</strong><span id="console-status" class="console-status">En espera</span></div>
           <div class="console-actions">
+            <button id="btn-console-share" class="text-btn" title="Sube la consola a mclo.gs y copia el enlace"><svg class="icon"><use href="#i-globe"></use></svg>Compartir</button>
             <button id="btn-console-copy" class="text-btn"><svg class="icon"><use href="#i-copy"></use></svg>Copiar</button>
             <button id="btn-console-clear" class="text-btn"><svg class="icon"><use href="#i-trash"></use></svg>Limpiar</button>
             <button id="btn-console-close" class="icon-btn" title="Cerrar consola" aria-label="Cerrar consola"><svg class="icon"><use href="#i-x"></use></svg></button>
@@ -923,6 +974,7 @@
   <script src="renderer-instances.js"></script>
   <script src="renderer-pages.js"></script>
   <script src="renderer-servers.js"></script>
+  <script src="renderer-localservers.js"></script>
   <script src="renderer-content.js"></script>
   <script src="renderer-ai.js"></script>
   <script src="renderer-updates.js"></script>

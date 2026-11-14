@@ -1,6 +1,6 @@
 'use strict';
 
-/* NexyLauncher 1.0 — ajustes, Java y arranque final del renderer. */
+/* NexyLauncher 1.1 — ajustes, Java y arranque final del renderer. */
 (() => {
   const App = window.NexyApp;
   const api = App.api;
@@ -156,13 +156,13 @@
         help.textContent = `Ruta manual seleccionada. Minecraft ${version} necesita Java ${required} o superior.`;
       } else if (!detected.length) {
         help.textContent = state.javaReady
-          ? `No se detectó Java. Minecraft ${version} necesita Java ${required}. Usa Instalar para descargarlo.`
+          ? `No se detectó Java. Minecraft ${version} necesita Java ${required}. Usa Instalar Java para descargarlo automáticamente.`
           : 'Detectando instalaciones de Java en el sistema…';
       } else {
         const best = App.javaForVersion(App.selectedVersion());
         help.textContent = best && best.major >= required
           ? `Automático: se elegirá Java ${best.major} (${best.vendor || 'Java'} ${best.version}) para esta versión. Necesita Java ${required}+.`
-          : `Falta Java ${required} para esta versión. Usa Instalar o Examinar para añadirlo.`;
+          : `Falta Java ${required} para esta versión. Usa Instalar Java o Examinar para añadirlo.`;
       }
     }
   }
@@ -175,10 +175,10 @@
       if (element) element.textContent = value;
     };
     setText('#ram-system', `${state.system.totalMemory || '—'} GB de RAM · ${state.system.freeMemory ?? '—'} GB libres`);
-    setText('#about-version', state.system.appVersion || '1.0.0');
+    setText('#about-version', state.system.appVersion || '1.1.0');
     setText('#about-electron', state.system.electron || '—');
     setText('#about-chrome', state.system.chrome || '—');
-    setText('#changelog-version', state.system.appVersion || '1.0.0');
+    setText('#changelog-version', state.system.appVersion || '1.1.0');
   }
 
   function render() {
@@ -197,6 +197,12 @@
     setChecked('#setting-minimize', settings.minimizeOnLaunch);
     setChecked('#setting-snapshots', settings.showSnapshots);
     setChecked('#setting-fullscreen', settings.resolution?.fullscreen);
+    setChecked('#setting-autobackup', settings.autoBackupWorlds !== false);
+
+    const keepInput = $('#setting-backup-keep');
+    if (keepInput && document.activeElement !== keepInput) {
+      keepInput.value = String(Math.round(App.clamp(settings.backupKeep ?? 6, 1, 50)));
+    }
 
     const jvm = $('#setting-jvm-args');
     if (jvm) jvm.value = settings.jvmArgs || '';
@@ -295,14 +301,20 @@
     });
 
     try {
-      const result = await api.java.install(required);
-      if (!result || result.canceled) return;
+      const result = await api.java.auto(required);
+      if (!result) return;
       if (result.settings) state.settings = result.settings;
       if (result.java && !state.java.some((item) => item.path === result.java.path)) {
         state.java = [result.java, ...state.java].sort((a, b) => b.major - a.major);
       }
       App.refreshJava();
-      toast(`Java ${required} instalado y asignado a esta versión.`, 'success', 'Java instalado');
+      toast(
+        result.installed
+          ? `Java ${required} descargado e instalado en la carpeta del launcher.`
+          : `Java ${required} ya estaba disponible y se ha asignado a esta versión.`,
+        'success',
+        'Java listo'
+      );
     } catch (error) {
       toastError(App.errorMessage(error), 'No se pudo instalar Java');
     } finally {
@@ -372,6 +384,113 @@
     }
   }
 
+  function sessionDuration(ms) {
+    const total = Math.max(0, Math.round(Number(ms) / 1000));
+    const hours = Math.floor(total / 3600);
+    const minutes = Math.floor((total % 3600) / 60);
+    const seconds = total % 60;
+    if (hours) return `${hours} h ${minutes} min`;
+    if (minutes) return `${minutes} min${seconds ? ` ${seconds} s` : ''}`;
+    return `${seconds} s`;
+  }
+
+  function sessionOutcome(session) {
+    if (!session.endedAt) return { label: 'En curso', kind: 'accent' };
+    if (session.crashed) return { label: 'Se cerró con error', kind: 'danger' };
+    if (session.stopped) return { label: 'Detenida', kind: 'warn' };
+    return { label: 'Completada', kind: 'ok' };
+  }
+
+  function sessionMarkup(session) {
+    const outcome = sessionOutcome(session);
+    const loader = session.loader && session.loader !== 'vanilla'
+      ? `${App.loaderLabel(session.loader)}${session.loaderVersion ? ` ${session.loaderVersion}` : ''}`
+      : 'Vanilla';
+    const when = session.endedAt || session.startedAt;
+    return `
+      <article class="content-card session-row">
+        <span class="content-icon">${icon('clock')}</span>
+        <div class="mod-main">
+          <strong title="${esc(session.instanceName)}">${esc(session.instanceName)} · Minecraft ${esc(session.version || '—')}</strong>
+          <small>${esc(loader)}${session.accountName ? ` · ${esc(session.accountName)}` : ''} · ${esc(App.formatDate(when))}</small>
+          <small>${session.durationMs ? sessionDuration(session.durationMs) : 'Sin duración'}${session.exitCode !== null && session.exitCode !== undefined ? ` · código ${esc(String(session.exitCode))}` : ''}</small>
+        </div>
+        <div class="content-actions">
+          <span class="badge ${outcome.kind === 'accent' ? 'badge-accent' : outcome.kind === 'warn' ? 'badge-warn' : 'badge-soft'}${outcome.kind === 'danger' ? ' session-badge-danger' : ''}">${esc(outcome.label)}</span>
+        </div>
+      </article>`;
+  }
+
+  async function openSessionHistory() {
+    let list = Array.isArray(state.sessions) ? state.sessions : [];
+    try {
+      const result = await api.sessions.list();
+      const fresh = Array.isArray(result?.sessions) ? result.sessions : Array.isArray(result) ? result : null;
+      if (fresh) {
+        list = fresh;
+        state.sessions = fresh;
+      }
+    } catch {
+      /* se muestra la lista que ya tenemos */
+    }
+
+    const body = list.length
+      ? `<div class="content-list session-list">${list.map(sessionMarkup).join('')}</div>`
+      : '<p class="modal-text">Todavía no hay ninguna partida registrada. Las sesiones se guardan aquí en cuanto lances Minecraft.</p>';
+
+    const modal = App.openModal(`
+      ${App.modalHead('HISTORIAL', 'Tus partidas', 'Inicio, duración y resultado de cada sesión en este equipo.')}
+      ${body}
+      <div class="modal-actions">
+        <button class="btn btn-ghost" data-session-clear ${list.length ? '' : 'disabled'}>Borrar historial</button>
+        <button class="btn btn-primary" data-modal-close>Cerrar</button>
+      </div>`, { wide: true });
+
+    modal.querySelector('[data-session-clear]')?.addEventListener('click', async (event) => {
+      const button = event.currentTarget;
+      if (button.dataset.armed !== 'yes') {
+        button.dataset.armed = 'yes';
+        button.textContent = '¿Seguro? Pulsa otra vez';
+        clearTimeout(button._resetTimer);
+        button._resetTimer = setTimeout(() => {
+          if (!button.isConnected) return;
+          button.dataset.armed = 'no';
+          button.textContent = 'Borrar historial';
+        }, 4000);
+        return;
+      }
+      clearTimeout(button._resetTimer);
+      button.disabled = true;
+      App.setBusy(button, true, 'Borrando…');
+      try {
+        const result = await api.sessions.clear();
+        state.sessions = Array.isArray(result?.sessions) ? result.sessions : [];
+        toast('Historial de sesiones borrado.', 'success', 'Historial');
+        App.closeModal();
+      } catch (error) {
+        toastError(App.errorMessage(error), 'No se pudo borrar el historial');
+        App.setBusy(button, false);
+        button.disabled = false;
+        button.dataset.armed = 'no';
+        button.textContent = 'Borrar historial';
+      }
+    });
+  }
+
+  async function shareLastLog() {
+    const button = $('#btn-share-last-log');
+    App.setBusy(button, true, 'Subiendo…');
+    try {
+      const result = await api.logs.share({});
+      toast(`Enlace copiado al portapapeles: ${result.url}`, 'success', 'Registro en mclo.gs');
+      api.openExternal(result.url).catch(() => {});
+    } catch (error) {
+      toastError(App.errorMessage(error), 'No se pudo subir el registro');
+    } finally {
+      App.setBusy(button, false);
+    }
+  }
+
   function init() {
     $('#btn-feedback-discord-dm')?.addEventListener('click', () => App.openFeedback('discord-user'));
     $('#btn-feedback-form')?.addEventListener('click', () => App.openFeedback('form'));
@@ -396,6 +515,27 @@
       state.settings.minimizeOnLaunch = event.target.checked;
       queuePatch({ minimizeOnLaunch: event.target.checked });
     });
+    $('#setting-autobackup')?.addEventListener('change', (event) => {
+      if (!state.settings) return;
+      state.settings.autoBackupWorlds = event.target.checked;
+      queuePatch({ autoBackupWorlds: event.target.checked }, true);
+      toast(
+        event.target.checked
+          ? 'Los mundos se copiarán antes de lanzar si han cambiado.'
+          : 'Las copias automáticas quedan desactivadas. Puedes seguir creándolas a mano en Contenido.',
+        'info',
+        'Copias de seguridad'
+      );
+    });
+    $('#setting-backup-keep')?.addEventListener('change', (event) => {
+      if (!state.settings) return;
+      const keep = Math.round(App.clamp(event.target.value, 1, 50));
+      event.target.value = String(keep);
+      state.settings.backupKeep = keep;
+      queuePatch({ backupKeep: keep }, true);
+    });
+    $('#btn-session-history')?.addEventListener('click', openSessionHistory);
+    $('#btn-share-last-log')?.addEventListener('click', shareLastLog);
     $('#setting-snapshots')?.addEventListener('change', (event) => {
       state.settings.showSnapshots = event.target.checked;
       queuePatch({ showSnapshots: event.target.checked });

@@ -1,6 +1,6 @@
 'use strict';
 
-/* NexyLauncher 1.0 — instancias de Minecraft aisladas. */
+/* NexyLauncher 1.1 — instancias de Minecraft aisladas. */
 (() => {
   const App = window.NexyApp;
   const api = App.api;
@@ -1909,15 +1909,19 @@
   }
 
   function openDeleteModal(instance) {
+    const managed = instance.managed !== false;
     const modal = App.openModal(`
       <div class="modal-icon danger">${icon('trash')}</div>
       ${App.modalHead('ELIMINAR', '¿Eliminar la instancia?', `Se quitará «${instance.name}» del launcher.`)}
-      <p class="modal-text">Los archivos de la instancia se conservarán en el disco salvo que marques la casilla inferior.</p>
+      <p class="modal-text">${managed
+        ? 'Los archivos de la instancia se conservarán en el disco salvo que marques la casilla inferior.'
+        : 'Esta instancia se importó de otro launcher y vive en su carpeta original. Al quitarla de NexyLauncher no se borrará nada.'}</p>
+      ${managed ? `
       <label class="check-row">
         <input type="checkbox" id="instance-delete-files">
         <span>Eliminar también todos los archivos (mods, mundos, versiones)</span>
       </label>
-      <p class="form-hint">Solo se pueden borrar desde aquí las carpetas creadas por el launcher.</p>
+      <p class="form-hint">Solo se pueden borrar desde aquí las carpetas creadas por el launcher.</p>` : ''}
       <div class="modal-actions">
         <button class="btn btn-ghost" data-modal-close>Cancelar</button>
         <button class="btn btn-danger" data-instance-delete-confirm>Eliminar instancia</button>
@@ -2416,6 +2420,282 @@
   }
 
   async function importInstance() {
+    openLauncherImportModal();
+  }
+
+  function launcherInstanceMeta(instance) {
+    const bits = [];
+    if (instance.version) bits.push(`Minecraft ${instance.version}`);
+    if (instance.loader && instance.loader !== 'vanilla') {
+      bits.push(`${App.loaderLabel(instance.loader)}${instance.loaderVersion ? ` ${instance.loaderVersion}` : ''}`);
+    } else {
+      bits.push('Vanilla');
+    }
+    return bits.join(' · ');
+  }
+
+  function launcherInstanceCounts(instance) {
+    return `${instance.mods || 0} mods · ${instance.worlds || 0} mundos`;
+  }
+
+  function openLauncherImportModal() {
+    const modal = App.openModal(`
+      ${App.modalHead(
+        'IMPORTAR',
+        'Importar instancias',
+        'Detectamos las instancias de otros launchers. Elige cuáles quieres traer: se usan desde su carpeta original, sin copiar archivos.'
+      )}
+      <div class="modal-form launcher-import">
+        <div class="launcher-import-block">
+          <div class="launcher-import-head">
+            <span class="field-label">LAUNCHERS DETECTADOS</span>
+            <button type="button" class="link-btn" data-launcher-refresh>${icon('refresh')}Volver a detectar</button>
+          </div>
+          <div id="launcher-detect-list" class="launcher-detect-list">
+            <div class="launcher-detect-state"><span class="spinner"></span><span>Buscando launchers instalados…</span></div>
+          </div>
+        </div>
+
+        <div class="launcher-manual-row">
+          <div class="launcher-manual-copy">
+            <span class="field-label">¿No aparece el tuyo?</span>
+            <p class="form-hint">Elige la carpeta raíz donde ese launcher guarda sus instancias, o directamente una instancia.</p>
+          </div>
+          <button type="button" class="btn btn-ghost" data-launcher-pick>${icon('folder')}Elegir carpeta…</button>
+        </div>
+
+        <div id="launcher-scan" class="launcher-scan" hidden>
+          <div class="launcher-scan-head">
+            <div class="launcher-scan-title">
+              <strong id="launcher-scan-name"></strong>
+              <small id="launcher-scan-path"></small>
+            </div>
+            <label class="check-row">
+              <input type="checkbox" data-launcher-select-all>
+              <span>Seleccionar todas</span>
+            </label>
+          </div>
+          <div id="launcher-scan-list" class="launcher-scan-list"></div>
+          <p class="form-hint" id="launcher-scan-hint">Se importan en su carpeta original. NexyLauncher añade su ficha e icono, pero no copia ni borra mods, mundos o versiones.</p>
+        </div>
+
+        ${progressBlock('launcher-import-progress')}
+      </div>
+      <div class="modal-actions">
+        <button type="button" class="btn btn-ghost modal-actions-lead" data-import-pack>${icon('archive')}Importar archivo .mrpack / .zip</button>
+        <button type="button" class="btn btn-ghost" data-modal-close>Cerrar</button>
+        <button type="button" class="btn btn-primary" data-launcher-import-run disabled>${icon('download')}Importar seleccionadas</button>
+      </div>`, { wide: true });
+
+    const detectList = modal.querySelector('#launcher-detect-list');
+    const scanBlock = modal.querySelector('#launcher-scan');
+    const scanName = modal.querySelector('#launcher-scan-name');
+    const scanPath = modal.querySelector('#launcher-scan-path');
+    const scanList = modal.querySelector('#launcher-scan-list');
+    const runButton = modal.querySelector('[data-launcher-import-run]');
+    const selectAll = modal.querySelector('[data-launcher-select-all]');
+    const refreshButton = modal.querySelector('[data-launcher-refresh]');
+    const pickButton = modal.querySelector('[data-launcher-pick]');
+    let scanData = null;
+    let detecting = false;
+
+    const setRunState = () => {
+      if (!runButton) return;
+      const checked = scanList
+        ? [...scanList.querySelectorAll('input[data-launcher-item]:not(:disabled)')].filter((input) => input.checked)
+        : [];
+      runButton.disabled = !checked.length;
+      runButton.innerHTML = `${icon('download')}${checked.length
+        ? `Importar ${checked.length} instancia${checked.length === 1 ? '' : 's'}`
+        : 'Importar seleccionadas'}`;
+      if (selectAll) {
+        const all = scanList ? [...scanList.querySelectorAll('input[data-launcher-item]:not(:disabled)')] : [];
+        selectAll.checked = all.length > 0 && checked.length === all.length;
+        selectAll.indeterminate = checked.length > 0 && checked.length < all.length;
+        selectAll.disabled = all.length === 0;
+      }
+    };
+
+    const renderScan = (data) => {
+      scanData = data;
+      if (!scanBlock || !scanList) return;
+      const instances = Array.isArray(data?.instances) ? data.instances : [];
+      scanBlock.hidden = false;
+      if (scanName) scanName.textContent = data?.launcher?.name || 'Otro launcher';
+      if (scanPath) {
+        scanPath.textContent = data?.root || '';
+        scanPath.title = data?.root || '';
+      }
+
+      if (!instances.length) {
+        scanList.innerHTML = `
+          <div class="launcher-detect-state">
+            ${icon('info')}
+            <span>No se encontraron instancias en esa carpeta. Prueba con la carpeta que contiene las carpetas de cada instancia.</span>
+          </div>`;
+        setRunState();
+        return;
+      }
+
+      scanList.innerHTML = instances.map((instance, index) => `
+        <label class="launcher-instance${instance.added ? ' is-added' : ''}">
+          <input type="checkbox" data-launcher-item="${index}" ${instance.added ? 'disabled' : 'checked'}>
+          <span class="launcher-instance-copy">
+            <span class="launcher-instance-name">
+              ${esc(instance.name)}
+              ${instance.added ? `<span class="badge badge-soft">Ya importada${instance.addedName && instance.addedName !== instance.name ? ` como «${esc(instance.addedName)}»` : ''}</span>` : ''}
+            </span>
+            <span class="launcher-instance-meta">
+              <span>${esc(launcherInstanceMeta(instance))}</span>
+              <small>${esc(launcherInstanceCounts(instance))}</small>
+            </span>
+            <span class="launcher-instance-path" title="${esc(instance.gameRoot)}">${esc(instance.gameRoot)}</span>
+          </span>
+        </label>`).join('');
+      setRunState();
+    };
+
+    const scanRoot = async (root, launcherId = 'auto') => {
+      if (!scanList || !scanBlock) return;
+      scanBlock.hidden = false;
+      if (scanName) scanName.textContent = 'Escaneando…';
+      if (scanPath) {
+        scanPath.textContent = root;
+        scanPath.title = root;
+      }
+      scanList.innerHTML = `<div class="launcher-detect-state"><span class="spinner"></span><span>Buscando instancias en esa carpeta…</span></div>`;
+      if (runButton) runButton.disabled = true;
+      try {
+        const data = await api.launchers.scan({ launcherId, root });
+        renderScan(data);
+      } catch (error) {
+        scanList.innerHTML = `<div class="launcher-detect-state warn">${icon('alert')}<span>${esc(App.errorMessage(error))}</span></div>`;
+        scanData = null;
+        setRunState();
+      }
+    };
+
+    const renderDetected = (data) => {
+      if (!detectList) return;
+      const launchers = Array.isArray(data?.launchers) ? data.launchers : [];
+      if (!launchers.length) {
+        detectList.innerHTML = `
+          <div class="launcher-detect-state">
+            ${icon('info')}
+            <span>No se detectó ningún launcher con instancias. Si sabes dónde está, elige su carpeta manualmente.</span>
+          </div>`;
+        return;
+      }
+      detectList.innerHTML = launchers.map((launcher, index) => `
+        <button type="button" class="launcher-detect-row" data-launcher-index="${index}">
+          <span class="launcher-detect-icon">${icon('layers')}</span>
+          <span class="launcher-detect-copy">
+            <strong>${esc(launcher.name)}</strong>
+            <small title="${esc(launcher.root)}">${esc(launcher.root)}</small>
+          </span>
+          <span class="launcher-detect-count ${launcher.available ? '' : 'muted'}">
+            ${launcher.available} / ${launcher.instanceCount}
+          </span>
+          ${icon('chevron-right')}
+        </button>`).join('');
+      detectList.querySelectorAll('[data-launcher-index]').forEach((button) => {
+        button.addEventListener('click', () => {
+          const launcher = launchers[Number(button.dataset.launcherIndex)];
+          if (!launcher) return;
+          detectList.querySelectorAll('.launcher-detect-row').forEach((row) => row.classList.toggle('active', row === button));
+          scanRoot(launcher.root, launcher.id);
+        });
+      });
+    };
+
+    const detect = async () => {
+      if (detecting || !detectList) return;
+      detecting = true;
+      if (refreshButton) refreshButton.disabled = true;
+      detectList.innerHTML = `<div class="launcher-detect-state"><span class="spinner"></span><span>Buscando launchers instalados…</span></div>`;
+      try {
+        renderDetected(await api.launchers.detect());
+      } catch (error) {
+        detectList.innerHTML = `<div class="launcher-detect-state warn">${icon('alert')}<span>${esc(App.errorMessage(error))}</span></div>`;
+      } finally {
+        detecting = false;
+        if (refreshButton) refreshButton.disabled = false;
+      }
+    };
+
+    scanList?.addEventListener('change', (event) => {
+      if (event.target.closest('[data-launcher-item]')) setRunState();
+    });
+    selectAll?.addEventListener('change', () => {
+      scanList?.querySelectorAll('input[data-launcher-item]:not(:disabled)').forEach((input) => {
+        input.checked = selectAll.checked;
+      });
+      setRunState();
+    });
+    refreshButton?.addEventListener('click', detect);
+    pickButton?.addEventListener('click', async () => {
+      try {
+        const result = await api.launchers.pickRoot();
+        if (!result || result.canceled || !result.root) return;
+        await scanRoot(result.root, 'auto');
+      } catch (error) {
+        toastError(App.errorMessage(error), 'No se pudo escanear la carpeta');
+      }
+    });
+    modal.querySelector('[data-import-pack]')?.addEventListener('click', () => {
+      App.closeModal();
+      importPackFile();
+    });
+    runButton?.addEventListener('click', async () => {
+      if (!scanData || !scanList) return;
+      const indexes = [...scanList.querySelectorAll('input[data-launcher-item]:checked:not(:disabled)')]
+        .map((input) => scanData.instances[Number(input.dataset.launcherItem)])
+        .filter(Boolean);
+      if (!indexes.length) return;
+      App.setBusy(runButton, true, 'Importando…');
+      setProgress(modal, 'Registrando las instancias…', 5);
+      try {
+        const data = await api.launchers.import({
+          launcherId: scanData.launcher?.id || 'auto',
+          root: scanData.root,
+          gameRoots: indexes.map((instance) => instance.gameRoot)
+        });
+        if (!data || data.canceled) {
+          App.setBusy(runButton, false);
+          return;
+        }
+        closeDetail();
+        App.applyInstanceState(data);
+        App.closeModal();
+        App.go('instances');
+        const count = Array.isArray(data.imported) ? data.imported.length : 0;
+        const launcherName = data.launcher?.name || 'otro launcher';
+        toast(
+          count === 1
+            ? `«${data.imported[0].name}» importada de ${launcherName}.`
+            : `${count} instancias importadas de ${launcherName}.`,
+          'success',
+          'Importación completada'
+        );
+        if (Array.isArray(data.skipped) && data.skipped.length) {
+          const skipped = data.skipped.length;
+          toast(
+            `${skipped} ${skipped === 1 ? 'instancia no se importó' : 'instancias no se importaron'}. ${data.skipped[0].reason}`,
+            'warning',
+            'Importación parcial'
+          );
+        }
+      } catch (error) {
+        setProgress(modal, App.errorMessage(error), null);
+        toastError(App.errorMessage(error), 'No se pudo importar');
+        App.setBusy(runButton, false);
+      }
+    });
+
+    detect();
+  }
+
+  async function importPackFile() {
     const modal = App.openModal(`
       ${App.modalHead(
         'IMPORTAR',

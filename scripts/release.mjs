@@ -1,5 +1,5 @@
 #!/usr/bin/env node
-/* Compila el MSI, calcula su hash y genera dist/updates.json para publicar una actualización. */
+/* Compila el instalador EXE, calcula su hash y genera dist/updates.json para publicar una actualización. */
 
 import { spawnSync } from 'node:child_process';
 import crypto from 'node:crypto';
@@ -40,6 +40,14 @@ function run(command, args) {
   if (result.status !== 0) fail(`El comando "${command} ${args.join(' ')}" terminó con error.`);
 }
 
+function clip(text, max = 240) {
+  const value = String(text || '').trim();
+  if (value.length <= max) return value;
+  const cut = value.slice(0, max - 1);
+  const space = cut.lastIndexOf(' ');
+  return `${(space > 80 ? cut.slice(0, space) : cut).trimEnd()}…`;
+}
+
 function readNotes() {
   const fallback = ['Mejoras de estabilidad y correcciones.'];
   if (!fs.existsSync(notesPath)) return fallback;
@@ -47,7 +55,7 @@ function readNotes() {
   const lines = fs.readFileSync(notesPath, 'utf8').split(/\r?\n/);
   const bullets = lines
     .filter((line) => /^\s*[-*]\s+\S/.test(line))
-    .map((line) => line.replace(/^\s*[-*]\s+/, '').replace(/\s+/g, ' ').trim().slice(0, 240))
+    .map((line) => clip(line.replace(/^\s*[-*]\s+/, '').replace(/\s+/g, ' ').trim()))
     .filter(Boolean);
   if (bullets.length) return bullets.slice(0, 8);
 
@@ -57,7 +65,7 @@ function readNotes() {
     .join(' ')
     .replace(/\s+/g, ' ')
     .trim();
-  return text ? [text.slice(0, 240)] : fallback;
+  return text ? [clip(text)] : fallback;
 }
 
 const pkg = JSON.parse(fs.readFileSync(packagePath, 'utf8'));
@@ -86,17 +94,17 @@ if (requested) {
   }
 }
 
-run('npm', ['run', 'build:msi']);
+run('npm', ['run', 'build:exe']);
 
-const msiName = `NexyLauncher-${version}-x64.msi`;
-const msiPath = path.join(distDir, msiName);
-if (!fs.existsSync(msiPath)) fail(`No se generó ${msiName} en la carpeta dist.`);
+const installerName = `NexyLauncher-${version}-x64.exe`;
+const installerPath = path.join(distDir, installerName);
+if (!fs.existsSync(installerPath)) fail(`No se generó ${installerName} en la carpeta dist.`);
 
-const sha256 = crypto.createHash('sha256').update(fs.readFileSync(msiPath)).digest('hex').toUpperCase();
+const sha256 = crypto.createHash('sha256').update(fs.readFileSync(installerPath)).digest('hex').toUpperCase();
 const manifest = {
   version,
   date: new Date().toISOString().slice(0, 10),
-  url: `${baseUrl}/${msiName}`,
+  url: `${baseUrl}/${installerName}`,
   sha256,
   notes: readNotes(),
   mandatory: config.mandatory === true
@@ -108,10 +116,10 @@ fs.writeFileSync(manifestPath, `${JSON.stringify(manifest, null, 2)}\n`, 'utf8')
 console.log(`
 [release] Listo para publicar NexyLauncher ${version}
 
-  Instalador : dist\\${msiName}
+  Instalador : dist\\${installerName}
   SHA256     : ${sha256}
   Manifiesto : dist\\updates.json
 
-  Sube el MSI y updates.json al alojamiento configurado en "downloadBaseUrl".
+  Sube el EXE y updates.json al alojamiento configurado en "downloadBaseUrl".
   El launcher consulta el manifiesto en UPDATE_MANIFEST_URL (main.js).
 `);

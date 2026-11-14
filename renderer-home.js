@@ -1,6 +1,6 @@
 'use strict';
 
-/* NexyLauncher 1.0 — inicio, lanzamiento, consola y servidores rápidos. */
+/* NexyLauncher 1.1 — inicio, lanzamiento, consola y servidores rápidos. */
 (() => {
   const App = window.NexyApp;
   const api = App.api;
@@ -456,7 +456,35 @@
     renderNews();
     renderQuickServers();
     renderJava();
+    renderLastSession();
     App.updateNetworkPill?.();
+  }
+
+  function sessionDuration(ms) {
+    const total = Math.max(0, Math.round(Number(ms) / 1000));
+    const hours = Math.floor(total / 3600);
+    const minutes = Math.floor((total % 3600) / 60);
+    if (hours) return `${hours} h ${minutes} min`;
+    if (minutes) return `${minutes} min`;
+    return `${total} s`;
+  }
+
+  function renderLastSession() {
+    const wrap = $('#hero-meta-session-wrap');
+    const label = $('#hero-meta-session');
+    if (!wrap || !label) return;
+    const session = Array.isArray(state.sessions) ? state.sessions[0] : null;
+    if (!session) {
+      wrap.hidden = true;
+      return;
+    }
+    wrap.hidden = false;
+    const tr = (text) => (App.i18n?.t ? App.i18n.t(text) : text);
+    const when = session.endedAt ? tr(App.relativeDate(session.endedAt)) : tr('en curso');
+    const duration = session.durationMs ? ` · ${sessionDuration(session.durationMs)}` : '';
+    const extra = session.crashed ? ` · ${tr('se cerró con error')}` : '';
+    label.textContent = `${tr('Última sesión')}: ${when}${duration}${extra}`;
+    wrap.classList.toggle('warn', session.crashed === true);
   }
 
   /* ---------------------------------------------------------------------- */
@@ -509,6 +537,25 @@
     }
     if (await App.copyText(text)) {
       toast('Contenido de la consola copiado al portapapeles.', 'success');
+    }
+  }
+
+  async function shareConsole() {
+    const text = consoleElement()?.textContent || '';
+    if (!text.trim()) {
+      toast('La consola está vacía todavía.', 'info');
+      return;
+    }
+    const button = $('#btn-console-share');
+    App.setBusy(button, true, 'Subiendo…');
+    try {
+      const result = await api.logs.share({ content: text });
+      toast(`Registro subido a mclo.gs y enlace copiado: ${result.url}`, 'success', 'Compartir registro');
+      api.openExternal(result.url).catch(() => {});
+    } catch (error) {
+      toastError(App.errorMessage(error), 'Compartir registro');
+    } finally {
+      App.setBusy(button, false);
     }
   }
 
@@ -747,11 +794,11 @@
       <div class="modal-icon danger">${icon('coffee')}</div>
       ${App.modalHead('JAVA NECESARIO', `Falta Java ${required}`, `Minecraft ${version} no puede iniciarse con el Java detectado.`)}
       <p class="modal-text">Minecraft ${version} necesita <strong>Java ${required} o superior</strong>.${available ? ` Solo se detectó Java ${available}.` : ' No se encontró ninguna instalación de Java.'}</p>
-      <p class="modal-text">Elige un Java ya instalado o descarga Java ${required} y elige la carpeta donde quieres instalarlo.</p>
+      <p class="modal-text">Nexy puede descargar Java ${required} automáticamente en la carpeta del launcher. No tienes que elegir ninguna carpeta.</p>
       <div class="modal-actions modal-actions-wrap">
         <button class="btn btn-ghost" data-java-cancel>Cancelar</button>
         <button class="btn btn-ghost" data-java-pick>Elegir Java…</button>
-        <button class="btn btn-primary" data-java-install>Instalar Java ${required}…</button>
+        <button class="btn btn-primary" data-java-install>Descargar Java ${required}</button>
       </div>
       <p class="help-text" data-java-status hidden></p>
     `);
@@ -807,7 +854,7 @@
 
     modal.querySelector('[data-java-install]')?.addEventListener('click', async () => {
       const button = modal.querySelector('[data-java-install]');
-      App.setBusy(button, true, 'Eligiendo carpeta…');
+      App.setBusy(button, true, 'Preparando…');
       let installing = false;
       const unsubscribe = api.onJavaInstallProgress?.((progress) => {
         if (!progress || Number(progress.major) !== required) return;
@@ -825,7 +872,7 @@
       });
 
       try {
-        const result = await api.java.install(required);
+        const result = await api.java.auto(required);
         if (!result || result.canceled) {
           setStatus('');
           return;
@@ -847,6 +894,11 @@
     if (!state.account) {
       toast('Elige un perfil de jugador para poder jugar.', 'warning');
       App.showLogin();
+      return;
+    }
+    if (state.account.type === 'msa' && (!state.msa?.signedIn || state.msa.accountId !== state.account.id)) {
+      toast('Inicia sesión con Microsoft para jugar con esta cuenta. La sesión es temporal y no se guarda.', 'warning', 'Cuenta Microsoft');
+      App.openMicrosoftLogin?.();
       return;
     }
     const target = options.instance || null;
@@ -1042,6 +1094,7 @@
     $('#btn-launch-stop')?.addEventListener('click', stopGame);
     $('#btn-console-close')?.addEventListener('click', closeConsole);
     $('#btn-console-copy')?.addEventListener('click', copyConsole);
+    $('#btn-console-share')?.addEventListener('click', shareConsole);
     $('#btn-console-clear')?.addEventListener('click', () => {
       clearConsole();
       toast('Consola limpiada.', 'info');

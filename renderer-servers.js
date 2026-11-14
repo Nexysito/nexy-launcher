@@ -1,6 +1,6 @@
 'use strict';
 
-/* NexyLauncher 1.0 — lista de servidores. */
+/* NexyLauncher 1.1 — lista de servidores. */
 (() => {
   const App = window.NexyApp;
   const api = App.api;

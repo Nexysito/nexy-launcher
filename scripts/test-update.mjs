@@ -12,14 +12,14 @@ import { fileURLToPath } from 'node:url';
 const require = createRequire(import.meta.url);
 const root = path.resolve(path.dirname(fileURLToPath(import.meta.url)), '..');
 const pkg = JSON.parse(fs.readFileSync(path.join(root, 'package.json'), 'utf8'));
-const parts = String(pkg.version || '1.0.0').split('.').map((part) => Number.parseInt(part, 10) || 0);
+const parts = String(pkg.version || '1.1.0').split('.').map((part) => Number.parseInt(part, 10) || 0);
 const fakeVersion = `${parts[0] || 2}.${parts[1] || 0}.${(parts[2] || 0) + 1}`;
 const electronPath = require('electron');
 
 const manifest = {
   version: fakeVersion,
   date: new Date().toISOString().slice(0, 10),
-  url: `https://example.com/NexyLauncher-${fakeVersion}-x64.msi`,
+  url: `https://example.com/NexyLauncher-${fakeVersion}-x64.exe`,
   sha256: '0'.repeat(64),
   notes: [
     'Prueba local del aviso de actualización',

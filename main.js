@@ -5,10 +5,11 @@ const path = require('node:path');
 const fs = require('node:fs');
 const os = require('node:os');
 const crypto = require('node:crypto');
+const zlib = require('node:zlib');
 const https = require('node:https');
 const net = require('node:net');
 const dns = require('node:dns');
-const { execFile, spawn } = require('node:child_process');
+const { execFile, execFileSync, spawn } = require('node:child_process');
 const AdmZip = require('adm-zip');
 const { Client } = require('minecraft-launcher-core');
 
@@ -32,21 +33,192 @@ const UPDATE_CACHE_MS = 6 * 60 * 60 * 1000;
 
 const INSTALL_DIR = app.isPackaged ? path.dirname(process.execPath) : __dirname;
 const PORTABLE_DATA_DIR = path.join(INSTALL_DIR, 'data');
+const PORTABLE_FLAG = path.join(INSTALL_DIR, 'portable.txt');
 
-/* Guarda los datos junto al launcher para no ocupar %APPDATA%.
-   Si la carpeta no permite escritura (por ejemplo, Program Files), se usa la predeterminada. */
-function prepareUserData() {
-  const directory = process.env.NEXY_USER_DATA
-    ? path.resolve(process.env.NEXY_USER_DATA)
-    : PORTABLE_DATA_DIR;
+function appDataRoot() {
+  if (process.env.APPDATA) return process.env.APPDATA;
   try {
-    fs.mkdirSync(directory, { recursive: true });
-    const probe = path.join(directory, '.write-test');
+    return app.getPath('appData');
+  } catch {
+    return path.join(os.homedir(), 'AppData', 'Roaming');
+  }
+}
+
+/* Carpeta de datos estable para las instalaciones con instalador.
+   Vive fuera de la carpeta de instalación, así actualizar o elegir otra
+   ubicación no mueve cuentas, instancias, servidores ni ajustes. */
+const STABLE_DATA_DIR = path.join(appDataRoot(), 'NexyLauncher');
+
+const DATA_FILES = ['settings.json', 'accounts.json', 'servers.json', 'local-servers.json'];
+
+function hasLauncherData(directory) {
+  if (!directory) return false;
+  try {
+    if (DATA_FILES.some((name) => fs.existsSync(path.join(directory, name)))) return true;
+    const instances = path.join(directory, 'instances');
+    return fs.existsSync(instances) && fs.readdirSync(instances).length > 0;
+  } catch {
+    return false;
+  }
+}
+
+/* Busca instalaciones anteriores de NexyLauncher en el registro de Windows
+   para recuperar los datos que quedaron junto al ejecutable. */
+function registryInstallDirectories() {
+  if (process.platform !== 'win32') return [];
+  const roots = [
+    'HKCU\\Software\\Microsoft\\Windows\\CurrentVersion\\Uninstall',
+    'HKLM\\Software\\Microsoft\\Windows\\CurrentVersion\\Uninstall',
+    'HKLM\\Software\\WOW6432Node\\Microsoft\\Windows\\CurrentVersion\\Uninstall'
+  ];
+  const keys = new Set();
+  for (const root of roots) {
+    try {
+      const output = execFileSync('reg.exe', ['query', root, '/s', '/f', 'NexyLauncher'], {
+        encoding: 'utf8',
+        windowsHide: true,
+        timeout: 5000,
+        stdio: ['ignore', 'pipe', 'ignore']
+      });
+      for (const line of String(output).split(/\r?\n/)) {
+        const trimmed = line.trim();
+        if (/^HKEY_/i.test(trimmed)) keys.add(trimmed);
+      }
+    } catch {
+      /* sin entradas, reg no disponible o consulta bloqueada */
+    }
+  }
+
+  const directories = [];
+  for (const key of keys) {
+    try {
+      const output = execFileSync('reg.exe', ['query', key], {
+        encoding: 'utf8',
+        windowsHide: true,
+        timeout: 5000,
+        stdio: ['ignore', 'pipe', 'ignore']
+      });
+      const values = {};
+      for (const line of String(output).split(/\r?\n/)) {
+        const match = /^\s*(\S+)\s+REG_[A-Z_]+\s+(.*)$/.exec(line);
+        if (match) values[match[1].toLowerCase()] = match[2].trim();
+      }
+      if (values.displayname && !/nexylauncher/i.test(values.displayname)) continue;
+      if (values.installlocation) directories.push(values.installlocation);
+      const command = values.displayicon || values.arpproducticon || values.uninstallstring || '';
+      const executable = /"([^"]+\.(?:exe|ico))"/i.exec(command) || /([A-Za-z]:\\[^\s"]+\.(?:exe|ico))/i.exec(command);
+      if (executable) directories.push(path.dirname(executable[1]));
+    } catch {
+      /* clave ilegible */
+    }
+  }
+  return directories;
+}
+
+function legacyInstallDirectories() {
+  const directories = [INSTALL_DIR];
+  if (process.env.LOCALAPPDATA) {
+    directories.push(path.join(process.env.LOCALAPPDATA, 'Programs', 'NexyLauncher'));
+    directories.push(path.join(process.env.LOCALAPPDATA, 'NexyLauncher'));
+  }
+  if (process.env.ProgramFiles) directories.push(path.join(process.env.ProgramFiles, 'NexyLauncher'));
+  if (process.env['ProgramFiles(x86)']) directories.push(path.join(process.env['ProgramFiles(x86)'], 'NexyLauncher'));
+  directories.push(...registryInstallDirectories());
+
+  const seen = new Set();
+  return directories.filter((directory) => {
+    if (!directory) return false;
+    const key = path.resolve(directory).toLowerCase();
+    if (seen.has(key)) return false;
+    seen.add(key);
+    return true;
+  });
+}
+
+/* Copia el contenido antiguo sin sobrescribir nada. En la raíz, `cache` y
+   `java` se regeneran solos (descargas y JRE), así que no se duplican. */
+function copyDataTree(source, target, root = true) {
+  fs.mkdirSync(target, { recursive: true });
+  for (const entry of fs.readdirSync(source, { withFileTypes: true })) {
+    if (root && (entry.name === 'cache' || entry.name === 'java')) continue;
+    const from = path.join(source, entry.name);
+    const to = path.join(target, entry.name);
+    if (entry.isDirectory()) {
+      copyDataTree(from, to, false);
+    } else if (entry.isFile() && !fs.existsSync(to)) {
+      fs.copyFileSync(from, to);
+    }
+  }
+}
+
+function migrateLegacyData(target) {
+  const flag = path.join(target, '.migrando');
+  const pending = fs.existsSync(flag);
+  if (!pending && hasLauncherData(target)) return false;
+  for (const installDirectory of legacyInstallDirectories()) {
+    const source = path.join(installDirectory, 'data');
+    if (source.toLowerCase() === target.toLowerCase()) continue;
+    if (!hasLauncherData(source)) continue;
+    try {
+      fs.mkdirSync(target, { recursive: true });
+      /* La marca permite reintentar si la copia se interrumpe a medias. */
+      fs.writeFileSync(flag, source, 'utf8');
+      copyDataTree(source, target);
+      fs.unlinkSync(flag);
+      fs.writeFileSync(
+        path.join(target, 'migrated-from.txt'),
+        `Datos migrados desde: ${source}\r\nFecha: ${new Date().toISOString()}\r\n`,
+        'utf8'
+      );
+      console.log(`Datos migrados desde "${source}" a "${target}".`);
+      return true;
+    } catch (error) {
+      console.error(`No se pudieron migrar los datos de "${source}".`, error);
+    }
+  }
+  if (pending) fs.rmSync(flag, { force: true });
+  return false;
+}
+
+function resolveDataDirectory() {
+  if (process.env.NEXY_USER_DATA) {
+    return { directory: path.resolve(process.env.NEXY_USER_DATA), portable: false, custom: true };
+  }
+  /* En desarrollo se sigue usando data\ dentro del proyecto. */
+  if (!app.isPackaged) return { directory: PORTABLE_DATA_DIR, portable: true, custom: false };
+  /* Modo portable explícito: un archivo portable.txt junto al .exe. */
+  if (fs.existsSync(PORTABLE_FLAG)) return { directory: PORTABLE_DATA_DIR, portable: true, custom: false };
+  return { directory: STABLE_DATA_DIR, portable: false, custom: false };
+}
+
+function prepareUserData() {
+  const { directory, portable, custom } = resolveDataDirectory();
+  let active = directory;
+  try {
+    fs.mkdirSync(active, { recursive: true });
+    const probe = path.join(active, '.write-test');
     fs.writeFileSync(probe, '');
     fs.unlinkSync(probe);
-    app.setPath('userData', directory);
+    app.setPath('userData', active);
   } catch (error) {
-    console.error(`No se pudo usar "${directory}" para los datos; se usará la carpeta predeterminada.`, error);
+    console.error(`No se pudo usar "${active}" para los datos; se usará la carpeta predeterminada.`, error);
+    try {
+      fs.mkdirSync(STABLE_DATA_DIR, { recursive: true });
+      app.setPath('userData', STABLE_DATA_DIR);
+      active = STABLE_DATA_DIR;
+    } catch {
+      active = app.getPath('userData');
+    }
+  }
+
+  /* Al arrancar una versión instalada, recupera una sola vez los datos que
+     quedaron en la carpeta del launcher antiguo o en otra instalación. */
+  if (app.isPackaged && !portable && !custom) {
+    try {
+      migrateLegacyData(active);
+    } catch (error) {
+      console.error('La migración automática de datos falló.', error);
+    }
   }
 }
 
@@ -57,13 +229,24 @@ app.setAppUserModelId('net.nexy.launcher');
 
 const DATA_DIR = app.getPath('userData');
 const INSTANCES_DIR = path.join(DATA_DIR, 'instances');
+const LOCAL_SERVERS_DIR = path.join(DATA_DIR, 'local-servers');
+const JAVA_DIR = path.join(DATA_DIR, 'java');
+const SKINS_DIR = path.join(DATA_DIR, 'skins');
 const FILES = {
   settings: path.join(DATA_DIR, 'settings.json'),
   accounts: path.join(DATA_DIR, 'accounts.json'),
   servers: path.join(DATA_DIR, 'servers.json'),
+  localServers: path.join(DATA_DIR, 'local-servers.json'),
   window: path.join(DATA_DIR, 'window-state.json'),
+  sessions: path.join(DATA_DIR, 'sessions.json'),
   manifest: path.join(DATA_DIR, 'cache', 'version_manifest.json')
 };
+
+/* Carpeta histórica donde vivía la instancia por defecto antes de que cada
+   instancia tuviera su propia carpeta con su nombre. */
+const LEGACY_GAME_ROOT = path.join(DATA_DIR, '.minecraft');
+const INSTANCE_DOC = 'instancia.md';
+const INSTANCE_ICON = 'icono.png';
 
 const THEMES = ['violet', 'emerald', 'amber', 'azure', 'rose'];
 const USERNAME_RE = /^[A-Za-z0-9_]{3,16}$/;
@@ -122,6 +305,7 @@ let mainWindow = null;
 let settings = null;
 let accounts = [];
 let servers = [];
+let localServers = [];
 let javaCache = null;
 let javaCacheAt = 0;
 let javaInflight = null;
@@ -132,6 +316,7 @@ let activeDownloadController = null;
 let currentLaunch = null;
 let cancelRequested = false;
 const loaderVersionsCache = new Map();
+const javaInstalls = new Map();
 
 /* -------------------------------------------------------------------------- */
 /*                                  Utilidades                                */
@@ -381,10 +566,573 @@ function pingMinecraftServer(address) {
   });
 }
 
+/* -------------------------------------------------------------------------- */
+/*                            Servidores locales                              */
+/* -------------------------------------------------------------------------- */
+
+const LOCAL_SERVER_MARKER = '.nexy-server.json';
+const LOCAL_SERVER_LOG_LIMIT = 2500;
+const LOCAL_SERVER_MAX_BYTES = 300 * 1024 * 1024;
+const localServerRuntime = new Map();
+
+function localServerSlug(name) {
+  const slug = String(name || '')
+    .normalize('NFD')
+    .replace(/[\u0300-\u036f]/g, '')
+    .toLowerCase()
+    .replace(/[^a-z0-9._-]+/g, '-')
+    .replace(/^[-._]+|[-._]+$/g, '')
+    .slice(0, 40);
+  return slug || 'servidor';
+}
+
+function uniqueLocalServerDirectory(name) {
+  ensureDir(LOCAL_SERVERS_DIR);
+  const base = localServerSlug(name);
+  let candidate = path.join(LOCAL_SERVERS_DIR, base);
+  let index = 2;
+  while (fs.existsSync(candidate)) {
+    candidate = path.join(LOCAL_SERVERS_DIR, `${base}-${index}`);
+    index += 1;
+  }
+  return candidate;
+}
+
+function localServerDirectory(server) {
+  const folder = String(server?.folder || '').trim();
+  if (!folder || folder !== path.basename(folder) || folder === '.' || folder === '..') {
+    throw new Error('La carpeta del servidor no es válida.');
+  }
+  return path.join(LOCAL_SERVERS_DIR, folder);
+}
+
+function localServerJarPath(directory) {
+  return path.join(directory, 'server.jar');
+}
+
+function sanitizeLocalServerPort(value) {
+  const port = Math.round(Number(value));
+  if (!Number.isInteger(port) || port < 1024 || port > 65535) {
+    throw new Error('El puerto debe estar entre 1024 y 65535.');
+  }
+  return port;
+}
+
+function sanitizeLocalServerMemory(value, fallback = null) {
+  const base = fallback || settings?.memory || { min: 2, max: 4 };
+  const min = clamp(Math.round(Number(value?.min)) || base.min, 1, 32);
+  const max = clamp(Math.round(Number(value?.max)) || base.max, 1, 32);
+  return { min: Math.min(min, max), max: Math.max(min, max) };
+}
+
+function sanitizeLocalServer(value) {
+  if (!isPlainObject(value)) return null;
+  const name = String(value.name || '').replace(/[\u0000-\u001F]/g, '').trim().slice(0, 40);
+  const version = safeVersionId(value.version);
+  const folder = String(value.folder || '').trim();
+  if (!name || !version) return null;
+  if (!folder || folder !== path.basename(folder) || folder === '.' || folder === '..') return null;
+  let port = 25565;
+  try {
+    port = sanitizeLocalServerPort(value.port);
+  } catch {
+    /* se queda el puerto por defecto */
+  }
+  return {
+    id: typeof value.id === 'string' && value.id ? value.id : crypto.randomUUID(),
+    name,
+    version,
+    port,
+    memory: sanitizeLocalServerMemory(value.memory),
+    onlineMode: value.onlineMode !== false,
+    folder,
+    createdAt: typeof value.createdAt === 'string' ? value.createdAt : new Date().toISOString()
+  };
+}
+
+function findLocalServer(id) {
+  const server = localServers.find((item) => item.id === String(id || ''));
+  if (!server) throw new Error('Ese servidor ya no existe.');
+  return server;
+}
+
+function saveLocalServers() {
+  writeJson(FILES.localServers, localServers);
+}
+
+function publicLocalServer(server) {
+  const runtime = localServerRuntime.get(server.id);
+  let directory = '';
+  try {
+    directory = localServerDirectory(server);
+  } catch {
+    /* carpeta no válida */
+  }
+  return {
+    ...server,
+    directory,
+    installed: Boolean(directory) && fs.existsSync(localServerJarPath(directory)),
+    status: runtime?.status || 'stopped',
+    pid: runtime?.child?.pid || null,
+    startedAt: runtime?.startedAt || null,
+    error: runtime?.error || '',
+    download: runtime?.download || null
+  };
+}
+
+function publicLocalServers() {
+  return localServers.map(publicLocalServer);
+}
+
+function broadcastLocalServer(server) {
+  sendToRenderer('localserver:event', { type: 'state', server: publicLocalServer(server) });
+}
+
+function setLocalServerRuntime(server, patch = {}) {
+  const runtime = localServerRuntime.get(server.id) || { logs: [] };
+  Object.assign(runtime, patch);
+  localServerRuntime.set(server.id, runtime);
+  broadcastLocalServer(server);
+  return runtime;
+}
+
+function writeLocalServerMarker(server) {
+  const directory = localServerDirectory(server);
+  ensureDir(directory);
+  writeJson(path.join(directory, LOCAL_SERVER_MARKER), {
+    id: server.id,
+    name: server.name,
+    version: server.version,
+    port: server.port,
+    memory: server.memory,
+    onlineMode: server.onlineMode,
+    createdAt: server.createdAt,
+    updatedAt: new Date().toISOString()
+  });
+}
+
+function writeServerEula(server) {
+  const directory = localServerDirectory(server);
+  ensureDir(directory);
+  fs.writeFileSync(
+    path.join(directory, 'eula.txt'),
+    `# Aceptado desde NexyLauncher el ${new Date().toISOString()}\neula=true\n`,
+    'utf8'
+  );
+}
+
+function applyServerProperties(text, values) {
+  const seen = new Set();
+  const lines = String(text || '')
+    .replace(/\r\n/g, '\n')
+    .split('\n')
+    .filter((line, index, all) => !(index === all.length - 1 && line === ''));
+  const output = lines.map((line) => {
+    if (!line || line.startsWith('#')) return line;
+    const separator = line.indexOf('=');
+    if (separator <= 0) return line;
+    const key = line.slice(0, separator).trim();
+    if (!Object.prototype.hasOwnProperty.call(values, key)) return line;
+    seen.add(key);
+    return `${key}=${values[key]}`;
+  });
+  for (const [key, value] of Object.entries(values)) {
+    if (!seen.has(key)) output.push(`${key}=${value}`);
+  }
+  return `${output.join('\n')}\n`;
+}
+
+function writeServerProperties(server) {
+  const directory = localServerDirectory(server);
+  ensureDir(directory);
+  const file = path.join(directory, 'server.properties');
+  let current = '';
+  if (fs.existsSync(file)) {
+    try {
+      current = fs.readFileSync(file, 'utf8');
+    } catch {
+      current = '';
+    }
+  }
+  if (!current.trim()) {
+    current = [
+      '#Minecraft server properties',
+      'max-players=20',
+      'view-distance=10',
+      'simulation-distance=10',
+      'spawn-protection=16',
+      'enable-command-block=true',
+      'white-list=false',
+      ''
+    ].join('\n');
+  }
+  const motd = server.name.replace(/[\r\n]/g, ' ').slice(0, 59);
+  const next = applyServerProperties(current, {
+    'server-port': server.port,
+    'server-ip': '',
+    motd,
+    'online-mode': server.onlineMode ? 'true' : 'false'
+  });
+  fs.writeFileSync(file, next, 'utf8');
+}
+
+function isLocalServerPortFree(port) {
+  return new Promise((resolve) => {
+    const tester = net.createServer();
+    tester.once('error', () => resolve(false));
+    tester.once('listening', () => tester.close(() => resolve(true)));
+    tester.listen({ host: '0.0.0.0', port });
+  });
+}
+
+async function suggestLocalServerPort() {
+  const used = new Set(localServers.map((item) => item.port));
+  for (let port = 25565; port < 25665; port += 1) {
+    if (!used.has(port) && await isLocalServerPortFree(port)) return port;
+  }
+  return 25565;
+}
+
+async function fetchServerDownload(version) {
+  const manifest = await fetchManifest(false);
+  const entry = manifest.versions.find((item) => item.id === version);
+  if (!entry?.url) throw new Error(`Minecraft ${version} no está en el catálogo oficial.`);
+  const metadata = await fetchJson(entry.url, { timeout: 30000 });
+  const download = metadata?.downloads?.server;
+  if (!download?.url) {
+    throw new Error(`Minecraft ${version} no ofrece un servidor descargable para esta versión.`);
+  }
+  assertHttpUrl(download.url, ['mojang.com', 'minecraft.net']);
+  return download;
+}
+
+async function installLocalServerJar(server) {
+  const directory = localServerDirectory(server);
+  ensureDir(directory);
+  setLocalServerRuntime(server, {
+    status: 'installing',
+    error: '',
+    download: { percent: 0, received: 0, total: 0 }
+  });
+
+  try {
+    const download = await fetchServerDownload(server.version);
+    await downloadFile(download.url, localServerJarPath(directory), {
+      allowedDomains: ['mojang.com', 'minecraft.net'],
+      maxBytes: LOCAL_SERVER_MAX_BYTES,
+      sha1: download.sha1,
+      onProgress: (progress) => {
+        const runtime = localServerRuntime.get(server.id);
+        if (!runtime) return;
+        runtime.download = {
+          percent: progress.percent,
+          received: progress.received,
+          total: progress.total
+        };
+        sendToRenderer('localserver:event', {
+          type: 'download',
+          id: server.id,
+          percent: progress.percent,
+          received: progress.received,
+          total: progress.total
+        });
+      }
+    });
+    /* Si el servidor se eliminó mientras descargaba, no lo resucitamos. */
+    if (!localServers.some((item) => item.id === server.id)) {
+      await fs.promises.rm(directory, { recursive: true, force: true }).catch(() => {});
+      localServerRuntime.delete(server.id);
+      return false;
+    }
+    writeLocalServerMarker(server);
+    setLocalServerRuntime(server, { status: 'stopped', error: '', download: null });
+    return true;
+  } catch (error) {
+    if (!localServers.some((item) => item.id === server.id)) {
+      await fs.promises.rm(directory, { recursive: true, force: true }).catch(() => {});
+      localServerRuntime.delete(server.id);
+      return false;
+    }
+    setLocalServerRuntime(server, {
+      status: 'error',
+      error: `No se pudo descargar el servidor: ${humanError(error)}`,
+      download: null
+    });
+    throw error;
+  }
+}
+
+function attachLocalServerOutput(serverId, stream) {
+  if (!stream) return;
+  let pending = '';
+  stream.setEncoding('utf8');
+  stream.on('data', (chunk) => {
+    pending += chunk;
+    const lines = pending.split(/\r?\n/);
+    pending = lines.pop() ?? '';
+    for (const line of lines) pushLocalServerLine(serverId, line);
+  });
+  stream.on('end', () => {
+    if (pending) pushLocalServerLine(serverId, pending);
+    pending = '';
+  });
+}
+
+function pushLocalServerLine(serverId, rawLine) {
+  const line = stripAnsi(String(rawLine || ''));
+  const runtime = localServerRuntime.get(serverId);
+  if (!runtime) return;
+  runtime.logs.push(line);
+  if (runtime.logs.length > LOCAL_SERVER_LOG_LIMIT) {
+    runtime.logs.splice(0, runtime.logs.length - LOCAL_SERVER_LOG_LIMIT);
+  }
+  if (runtime.status === 'starting' && /Done \([^)]*\)! For help, type "help"/i.test(line)) {
+    runtime.status = 'running';
+    const server = localServers.find((item) => item.id === serverId);
+    if (server) broadcastLocalServer(server);
+  }
+  sendToRenderer('localserver:event', { type: 'log', id: serverId, line });
+}
+
+async function createLocalServer(payload = {}) {
+  if (!isPlainObject(payload)) throw new Error('Datos del servidor inválidos.');
+  const name = String(payload.name || '').replace(/[\u0000-\u001F]/g, '').trim().slice(0, 40);
+  if (!name) throw new Error('Escribe un nombre para el servidor.');
+  if (payload.eula !== true) throw new Error('Debes aceptar el EULA de Minecraft para crear el servidor.');
+  const version = safeVersionId(payload.version);
+  if (!version) throw new Error('Elige una versión de Minecraft válida.');
+  const port = sanitizeLocalServerPort(payload.port);
+  const memory = sanitizeLocalServerMemory(payload.memory, settings.memory);
+  const occupied = localServers.find((item) => item.port === port);
+  if (occupied) throw new Error(`El puerto ${port} ya lo usa «${occupied.name}».`);
+  if (!(await isLocalServerPortFree(port))) {
+    throw new Error(`El puerto ${port} está ocupado por otro programa. Elige otro.`);
+  }
+
+  const directory = uniqueLocalServerDirectory(name);
+  ensureDir(directory);
+  const server = {
+    id: crypto.randomUUID(),
+    name,
+    version,
+    port,
+    memory,
+    onlineMode: payload.onlineMode !== false,
+    folder: path.basename(directory),
+    createdAt: new Date().toISOString()
+  };
+
+  try {
+    writeLocalServerMarker(server);
+    writeServerEula(server);
+    writeServerProperties(server);
+    localServers.push(server);
+    saveLocalServers();
+  } catch (error) {
+    localServers = localServers.filter((item) => item.id !== server.id);
+    await fs.promises.rm(directory, { recursive: true, force: true }).catch(() => {});
+    throw error;
+  }
+
+  /* La descarga del .jar sigue en segundo plano; la tarjeta muestra el progreso. */
+  installLocalServerJar(server).catch(() => {});
+  return { servers: publicLocalServers(), server: publicLocalServer(server) };
+}
+
+async function startLocalServer(id) {
+  const server = findLocalServer(id);
+  const runtime = localServerRuntime.get(server.id);
+  if (runtime?.child) return { servers: publicLocalServers(), server: publicLocalServer(server), alreadyRunning: true };
+  if (runtime?.status === 'installing') {
+    throw new Error('El servidor todavía se está descargando. Espera a que termine.');
+  }
+
+  const directory = localServerDirectory(server);
+  ensureDir(directory);
+  if (!fs.existsSync(localServerJarPath(directory))) {
+    installLocalServerJar(server).catch(() => {});
+    throw new Error('El servidor se está descargando. Espera a que termine para iniciarlo.');
+  }
+  if (!(await isLocalServerPortFree(server.port))) {
+    throw new Error(`El puerto ${server.port} está ocupado. Cierra el programa que lo usa y vuelve a intentarlo.`);
+  }
+
+  writeServerEula(server);
+  writeServerProperties(server);
+
+  if (!localServerRuntime.get(server.id)) {
+    localServerRuntime.set(server.id, {
+      status: 'starting',
+      logs: [],
+      startedAt: Date.now(),
+      stopping: false,
+      error: '',
+      download: null
+    });
+  } else {
+    setLocalServerRuntime(server, { status: 'starting', stopping: false, error: '', download: null });
+  }
+
+  let java;
+  try {
+    java = await resolveJavaFor(server.version);
+  } catch (error) {
+    if (error.code !== 'JAVA_REQUIRED') throw error;
+
+    const required = Number(error.details?.required) || 21;
+    pushLocalServerLine(server.id, `[Nexy] Minecraft ${server.version} necesita Java ${required}. Descargándolo automáticamente…`);
+    let lastPercent = -10;
+    try {
+      const result = await ensureJavaInstalled(required, (progress) => {
+        if (progress.phase === 'download' && Number.isFinite(progress.percent) && progress.percent - lastPercent >= 10) {
+          lastPercent = progress.percent;
+          pushLocalServerLine(server.id, `[Nexy] Descargando Java ${required}… ${progress.percent}%`);
+        }
+      });
+      java = { path: result.java.path, info: result.java, required, automatic: true };
+      pushLocalServerLine(server.id, `[Nexy] Java ${required} listo. Iniciando el servidor…`);
+    } catch (installError) {
+      const message = `No se pudo instalar Java ${required} automáticamente: ${humanError(installError)}`;
+      pushLocalServerLine(server.id, `[Nexy] ${message}`);
+      setLocalServerRuntime(server, { status: 'error', error: message, download: null });
+      throw new Error(message);
+    }
+  }
+
+  const child = spawn(
+    java.path,
+    [`-Xms${server.memory.min}G`, `-Xmx${server.memory.max}G`, '-jar', 'server.jar', 'nogui'],
+    { cwd: directory, windowsHide: true, stdio: ['pipe', 'pipe', 'pipe'] }
+  );
+
+  const current = localServerRuntime.get(server.id);
+  localServerRuntime.set(server.id, {
+    child,
+    status: 'starting',
+    logs: current?.logs || [],
+    startedAt: Date.now(),
+    stopping: false,
+    error: '',
+    download: null
+  });
+
+  attachLocalServerOutput(server.id, child.stdout);
+  attachLocalServerOutput(server.id, child.stderr);
+
+  child.on('error', (error) => {
+    const current = localServerRuntime.get(server.id);
+    if (!current) return;
+    current.child = null;
+    current.status = 'error';
+    current.error = `No se pudo iniciar el servidor: ${humanError(error)}`;
+    current.download = null;
+    broadcastLocalServer(server);
+  });
+
+  child.on('exit', (code, signal) => {
+    const current = localServerRuntime.get(server.id);
+    if (!current) return;
+    const stoppedByUser = current.stopping === true;
+    current.child = null;
+    current.status = stoppedByUser || code === 0 ? 'stopped' : 'error';
+    if (!stoppedByUser && code !== 0) {
+      current.error = `El servidor se cerró con código ${code ?? signal ?? 'desconocido'}. Revisa la consola.`;
+    }
+    current.download = null;
+    broadcastLocalServer(server);
+  });
+
+  broadcastLocalServer(server);
+  return { servers: publicLocalServers(), server: publicLocalServer(server) };
+}
+
+async function stopLocalServer(id, options = {}) {
+  const server = findLocalServer(id);
+  const runtime = localServerRuntime.get(server.id);
+  if (!runtime?.child) return publicLocalServers();
+
+  const child = runtime.child;
+  runtime.stopping = true;
+  runtime.status = 'stopping';
+  runtime.error = '';
+  broadcastLocalServer(server);
+
+  try {
+    child.stdin.write('stop\n');
+  } catch {
+    /* el proceso ya se cerró */
+  }
+
+  const wait = options.wait === true;
+  const done = new Promise((resolve) => {
+    if (!child || child.exitCode !== null) {
+      resolve();
+      return;
+    }
+    const timer = setTimeout(() => {
+      try {
+        child.kill();
+      } catch {
+        /* proceso ya cerrado */
+      }
+      resolve();
+    }, options.timeout || 15000);
+    timer.unref?.();
+    child.once('exit', () => {
+      clearTimeout(timer);
+      resolve();
+    });
+  });
+
+  if (wait) await done;
+  return publicLocalServers();
+}
+
+async function removeLocalServer(id) {
+  const server = findLocalServer(id);
+  const runtime = localServerRuntime.get(server.id);
+  if (runtime?.child) throw new Error('Detén el servidor antes de eliminarlo.');
+  if (runtime?.status === 'installing') {
+    throw new Error('El servidor todavía se está descargando. Espera a que termine para eliminarlo.');
+  }
+  const directory = localServerDirectory(server);
+  await fs.promises.rm(directory, { recursive: true, force: true });
+  localServers = localServers.filter((item) => item.id !== server.id);
+  localServerRuntime.delete(server.id);
+  saveLocalServers();
+  return publicLocalServers();
+}
+
+async function sendLocalServerCommand(id, command) {
+  const server = findLocalServer(id);
+  const runtime = localServerRuntime.get(server.id);
+  if (!runtime?.child) throw new Error('El servidor no está en marcha.');
+  const value = String(command || '').replace(/[\r\n]/g, ' ').trim().slice(0, 500);
+  if (!value) throw new Error('Escribe un comando.');
+  runtime.child.stdin.write(`${value}\n`);
+  return { ok: true, command: value };
+}
+
+function localServerLogs(id) {
+  const server = findLocalServer(id);
+  const runtime = localServerRuntime.get(server.id);
+  return {
+    server: publicLocalServer(server),
+    lines: runtime?.logs ? [...runtime.logs] : []
+  };
+}
+
+async function shutdownLocalServers() {
+  const running = localServers.filter((server) => localServerRuntime.get(server.id)?.child);
+  await Promise.all(
+    running.map((server) => stopLocalServer(server.id, { wait: true, timeout: 6000 }).catch(() => {}))
+  );
+}
+
 function defaultSettings() {
   const total = totalMemoryGB();
   const max = total >= 24 ? 8 : total >= 16 ? 6 : total >= 8 ? 4 : 2;
-  const freshRoot = path.join(DATA_DIR, '.minecraft');
+  const freshRoot = path.join(INSTANCES_DIR, 'Principal');
   return {
     schema: 2,
     activeAccountId: null,
@@ -397,6 +1145,8 @@ function defaultSettings() {
     gameArgs: '',
     minimizeOnLaunch: true,
     autoLogin: true,
+    autoBackupWorlds: true,
+    backupKeep: 6,
     showSnapshots: false,
     theme: 'violet',
     lastVersion: '',
@@ -410,7 +1160,9 @@ function defaultSettings() {
     aiAutoReadCrash: false,
     language: 'es',
     dismissedUpdateVersion: '',
-    seenWelcome: false
+    seenWelcome: false,
+    instances: [],
+    activeInstanceId: null
   };
 }
 
@@ -587,7 +1339,7 @@ async function fetchWithTimeout(url, options = {}, responseType = 'json') {
   try {
     const response = await fetch(url, {
       headers: {
-        'User-Agent': 'NexyLauncher/1.0 (Electron)',
+        'User-Agent': 'NexyLauncher/1.1 (Electron)',
         Accept: responseType === 'json' ? 'application/json' : '*/*',
         ...(options.headers || {})
       },
@@ -643,7 +1395,7 @@ function fetchJsonViaIp(url, options = {}, ip) {
           else callback(null, ip, 4);
         },
         headers: {
-          'User-Agent': 'NexyLauncher/1.0 (Electron)',
+          'User-Agent': 'NexyLauncher/1.1 (Electron)',
           Accept: 'application/json'
         },
         timeout: options.timeout ?? 25000
@@ -742,7 +1494,7 @@ async function downloadFile(url, destination, options = {}) {
   try {
     const response = await fetch(url, {
       headers: {
-        'User-Agent': 'NexyLauncher/1.0 (Electron)',
+        'User-Agent': 'NexyLauncher/1.1 (Electron)',
         Accept: '*/*',
         ...(options.headers || {})
       },
@@ -926,15 +1678,300 @@ function instanceMarkerPath(root) {
   return path.join(root, '.nexy-instance.json');
 }
 
+/* Cada instancia guarda su ficha dentro de su propia carpeta para que la
+   carpeta se entienda (y se pueda mover) sin depender de settings.json:
+   .nexy-instance.json  → datos para el launcher
+   instancia.md         → descripción legible
+   icono.png            → carátula */
+function instanceDocPath(root) {
+  return path.join(root, INSTANCE_DOC);
+}
+
+function instanceIconPath(root) {
+  return path.join(root, INSTANCE_ICON);
+}
+
+function decodeDataUrl(value) {
+  const match = /^data:image\/(png|jpe?g|webp);base64,([a-z0-9+/=]+)$/i.exec(String(value || '').replace(/\s+/g, ''));
+  if (!match) return null;
+  try {
+    return Buffer.from(match[2], 'base64');
+  } catch {
+    return null;
+  }
+}
+
+function docDate(value) {
+  if (!value) return 'Nunca';
+  const date = new Date(value);
+  if (Number.isNaN(date.getTime())) return 'Nunca';
+  return new Intl.DateTimeFormat('es-ES', {
+    day: '2-digit', month: 'short', year: 'numeric', hour: '2-digit', minute: '2-digit'
+  }).format(date);
+}
+
+/* -------------------------------------------------------------------------- */
+/*                     Icono generado para las instancias                     */
+/* -------------------------------------------------------------------------- */
+
+let crcTable = null;
+
+function crc32(buffer) {
+  if (!crcTable) {
+    crcTable = new Uint32Array(256);
+    for (let index = 0; index < 256; index++) {
+      let value = index;
+      for (let bit = 0; bit < 8; bit++) {
+        value = value & 1 ? 0xedb88320 ^ (value >>> 1) : value >>> 1;
+      }
+      crcTable[index] = value >>> 0;
+    }
+  }
+  let crc = 0xffffffff;
+  for (const byte of buffer) crc = crcTable[(crc ^ byte) & 0xff] ^ (crc >>> 8);
+  return (crc ^ 0xffffffff) >>> 0;
+}
+
+function pngChunk(type, data) {
+  const typeBuffer = Buffer.from(type, 'ascii');
+  const length = Buffer.alloc(4);
+  length.writeUInt32BE(data.length, 0);
+  const crc = Buffer.alloc(4);
+  crc.writeUInt32BE(crc32(Buffer.concat([typeBuffer, data])), 0);
+  return Buffer.concat([length, typeBuffer, data, crc]);
+}
+
+function hslToRgb(hue, saturation, lightness) {
+  const h = ((hue % 1) + 1) % 1;
+  const s = Math.min(1, Math.max(0, saturation));
+  const l = Math.min(1, Math.max(0, lightness));
+  if (!s) {
+    const value = Math.round(l * 255);
+    return [value, value, value];
+  }
+  const q = l < 0.5 ? l * (1 + s) : l + s - l * s;
+  const p = 2 * l - q;
+  const channel = (t) => {
+    let value = t;
+    if (value < 0) value += 1;
+    if (value > 1) value -= 1;
+    if (value < 1 / 6) return p + (q - p) * 6 * value;
+    if (value < 1 / 2) return q;
+    if (value < 2 / 3) return p + (q - p) * (2 / 3 - value) * 6;
+    return p;
+  };
+  return [
+    Math.round(channel(h + 1 / 3) * 255),
+    Math.round(channel(h) * 255),
+    Math.round(channel(h - 1 / 3) * 255)
+  ];
+}
+
+/* Identicon determinista con el nombre de la instancia. Se usa como carátula
+   cuando el usuario todavía no ha elegido una imagen. */
+function fallbackInstanceIcon(name) {
+  const size = 64;
+  const cells = 8;
+  const hash = crypto.createHash('sha1').update(String(name || 'nexy')).digest();
+  const hue = hash[0] / 255;
+  const accent = hslToRgb(hue, 0.62, 0.62);
+  const soft = hslToRgb(hue, 0.45, 0.32);
+  const background = hslToRgb(hue, 0.35, 0.1);
+  const margin = 4;
+  const cell = (size - margin * 2) / cells;
+  const on = [];
+  for (let row = 0; row < cells; row++) {
+    for (let col = 0; col < cells / 2; col++) {
+      const bit = row * (cells / 2) + col;
+      const set = (hash[1 + (bit >> 3)] >> (7 - (bit & 7))) & 1;
+      if (set) {
+        on.push([row, col]);
+        on.push([row, cells - 1 - col]);
+      }
+    }
+  }
+
+  const width = size;
+  const height = size;
+  const raw = Buffer.alloc((width * 4 + 1) * height);
+  for (let y = 0; y < height; y++) {
+    const rowStart = y * (width * 4 + 1);
+    raw[rowStart] = 0;
+    for (let x = 0; x < width; x++) {
+      const offset = rowStart + 1 + x * 4;
+      let color = background;
+      const col = Math.floor((x - margin) / cell);
+      const row = Math.floor((y - margin) / cell);
+      if (x >= margin && y >= margin && col >= 0 && col < cells && row >= 0 && row < cells) {
+        const filled = on.some((entry) => entry[0] === row && entry[1] === col);
+        if (filled) color = row === col || row + col === cells - 1 ? accent : soft;
+      }
+      raw[offset] = color[0];
+      raw[offset + 1] = color[1];
+      raw[offset + 2] = color[2];
+      raw[offset + 3] = 255;
+    }
+  }
+
+  const ihdr = Buffer.alloc(13);
+  ihdr.writeUInt32BE(width, 0);
+  ihdr.writeUInt32BE(height, 4);
+  ihdr[8] = 8;
+  ihdr[9] = 6;
+  ihdr[10] = 0;
+  ihdr[11] = 0;
+  ihdr[12] = 0;
+
+  return Buffer.concat([
+    Buffer.from([0x89, 0x50, 0x4e, 0x47, 0x0d, 0x0a, 0x1a, 0x0a]),
+    pngChunk('IHDR', ihdr),
+    pngChunk('IDAT', zlib.deflateSync(raw, { level: 9 })),
+    pngChunk('IEND', Buffer.alloc(0))
+  ]);
+}
+
+function instanceDoc(instance) {
+  const description = String(instance.description || '').trim();
+  const loader = instance.loader && instance.loader !== 'vanilla'
+    ? `${LOADER_LABELS[instance.loader] || instance.loader}${instance.loaderVersion ? ` ${instance.loaderVersion}` : ''}`
+    : 'Vanilla';
+  return [
+    `# ${instance.name}`,
+    '',
+    description || '_Sin descripción. Añádela desde NexyLauncher._',
+    '',
+    '## Datos de la instancia',
+    '',
+    `- **Versión de Minecraft:** ${instance.version || 'Sin asignar'}`,
+    `- **Cargador:** ${loader}`,
+    `- **Creada:** ${docDate(instance.createdAt)}`,
+    `- **Última partida:** ${docDate(instance.lastPlayedAt)}`,
+    `- **Carpeta:** \`${instance.gameRoot}\``,
+    '',
+    '_Este archivo se actualiza solo desde NexyLauncher._',
+    ''
+  ].join('\n');
+}
+
 function writeInstanceMarker(instance) {
   try {
-    writeJson(instanceMarkerPath(instance.gameRoot), {
+    const root = instance.gameRoot;
+    ensureDir(root);
+    writeJson(instanceMarkerPath(root), {
       id: instance.id,
       name: instance.name,
-      createdAt: instance.createdAt
+      createdAt: instance.createdAt,
+      version: instance.version || '',
+      loader: instance.loader || 'vanilla',
+      loaderVersion: instance.loaderVersion || '',
+      description: instance.description || '',
+      icon: instance.cover || instance.iconAuto ? INSTANCE_ICON : '',
+      iconAuto: Boolean(instance.iconAuto) && !instance.cover,
+      updatedAt: new Date().toISOString()
     });
-  } catch {
-    /* la instancia sigue siendo válida aunque no se pueda escribir el marcador */
+    fs.writeFileSync(instanceDocPath(root), instanceDoc(instance), 'utf8');
+
+    const icon = decodeDataUrl(instance.cover);
+    if (icon) {
+      fs.writeFileSync(instanceIconPath(root), icon);
+    } else if (instance.iconAuto) {
+      fs.writeFileSync(instanceIconPath(root), fallbackInstanceIcon(instance.name));
+    } else {
+      try {
+        fs.unlinkSync(instanceIconPath(root));
+      } catch {}
+    }
+  } catch (error) {
+    /* la instancia sigue siendo válida aunque no se pueda escribir su ficha */
+    console.warn('No se pudo escribir la ficha de la instancia:', humanError(error));
+  }
+}
+
+function readInstanceMarker(root) {
+  const data = readJson(instanceMarkerPath(root), null);
+  return isPlainObject(data) ? data : null;
+}
+
+/* Si la ficha de la carpeta tiene una descripción o un icono que el launcher
+   todavía no conoce, se adoptan. Así mover una carpeta no pierde información. */
+function adoptInstanceFiles(instance) {
+  if (!fs.existsSync(instance.gameRoot)) return;
+  const marker = readInstanceMarker(instance.gameRoot);
+  if (marker) {
+    if (!instance.description && typeof marker.description === 'string') {
+      instance.description = sanitizeInstanceDescription(marker.description);
+    }
+    if (!instance.version && typeof marker.version === 'string') {
+      instance.version = safeVersionId(marker.version) || '';
+    }
+    if (marker.iconAuto === true) instance.iconAuto = true;
+  }
+  if (!instance.cover) {
+    try {
+      const icon = fs.readFileSync(instanceIconPath(instance.gameRoot));
+      if (icon.length && icon.length <= 900_000) {
+        instance.cover = sanitizeInstanceCover(`data:image/png;base64,${icon.toString('base64')}`);
+      }
+    } catch {}
+  }
+}
+
+function instanceFolderManaged(instance) {
+  return path.dirname(path.resolve(instance.gameRoot)).toLowerCase() === path.resolve(INSTANCES_DIR).toLowerCase();
+}
+
+/* Mueve la carpeta de la instancia para que se llame como ella. Solo se hace
+   con carpetas gestionadas por el launcher (dentro de data/instances). */
+function moveInstanceFolder(instance, nextName) {
+  if (!instanceFolderManaged(instance)) return false;
+  const current = path.resolve(instance.gameRoot);
+  const target = path.join(INSTANCES_DIR, instanceSlug(nextName));
+  if (target.toLowerCase() === current.toLowerCase()) return false;
+  if (fs.existsSync(target)) return false;
+  if (!fs.existsSync(current)) {
+    instance.gameRoot = target;
+    return true;
+  }
+  try {
+    fs.renameSync(current, target);
+  } catch (error) {
+    console.warn('No se pudo renombrar la carpeta de la instancia:', humanError(error));
+    return false;
+  }
+  instance.gameRoot = target;
+  return true;
+}
+
+/* Instalaciones antiguas tenían una sola instancia en data/.minecraft. Ahora
+   cada instancia vive en data/instances/<nombre>. El traslado es un rename en
+   el mismo disco, así que es instantáneo y no duplica espacio. */
+function migrateLegacyInstanceRoots() {
+  let changed = false;
+  for (const instance of settings.instances || []) {
+    if (path.resolve(instance.gameRoot).toLowerCase() !== LEGACY_GAME_ROOT.toLowerCase()) continue;
+
+    const target = uniqueInstanceDirectory(instance.name);
+    if (!fs.existsSync(LEGACY_GAME_ROOT)) {
+      instance.gameRoot = target;
+      ensureDir(target);
+      changed = true;
+      continue;
+    }
+
+    try {
+      ensureDir(INSTANCES_DIR);
+      fs.renameSync(LEGACY_GAME_ROOT, target);
+      instance.gameRoot = target;
+      changed = true;
+      console.log(`Instancia "${instance.name}" trasladada a ${target}`);
+    } catch (error) {
+      console.warn('No se pudo mover data/.minecraft a su carpeta de instancia:', humanError(error));
+    }
+  }
+
+  if (changed) {
+    settings.gameRoot = activeInstance()?.gameRoot || settings.gameRoot;
+    saveSettings();
   }
 }
 
@@ -979,6 +2016,7 @@ function normalizeInstances(rawSettings) {
       loaderVersion: safeVersionId(item.loaderVersion ?? item.lastLoaderVersion) || '',
       description: sanitizeInstanceDescription(item.description),
       cover: sanitizeInstanceCover(item.cover),
+      iconAuto: item.iconAuto === true,
       settings: normalizeInstanceSettings(item.settings)
     });
   }
@@ -995,6 +2033,7 @@ function normalizeInstances(rawSettings) {
       loaderVersion: settings.lastLoaderVersion || '',
       description: '',
       cover: '',
+      iconAuto: true,
       settings: normalizeInstanceSettings(null)
     });
   }
@@ -1033,6 +2072,7 @@ async function instanceDetails(instance) {
   return {
     ...instance,
     effectiveSettings: effectiveInstanceSettings(instance),
+    managed: instanceFolderManaged(instance),
     exists: fs.existsSync(instance.gameRoot),
     versions: await countEntries(
       path.join(instance.gameRoot, 'versions'),
@@ -1041,6 +2081,9 @@ async function instanceDetails(instance) {
     mods: await countEntries(
       path.join(instance.gameRoot, 'mods'),
       (entry) => entry.isFile() && /\.jar(?:\.disabled)?$/i.test(entry.name)
+    ) + await countEntries(
+      path.join(instance.gameRoot, 'mods', '.desactivados'),
+      (entry) => entry.isFile() && /\.jar$/i.test(entry.name)
     ),
     worlds: await countEntries(path.join(instance.gameRoot, 'saves'), (entry) => entry.isDirectory())
   };
@@ -1078,7 +2121,7 @@ function gamePaths(gameRoot = null) {
 
 function ensureGameDirectories() {
   const paths = gamePaths();
-  for (const directory of [paths.gameRoot, paths.mods, paths.versions, paths.logs, paths.saves]) {
+  for (const directory of [paths.gameRoot, paths.mods, paths.versions, paths.logs, paths.saves, SKINS_DIR]) {
     ensureDir(directory);
   }
 }
@@ -1093,6 +2136,583 @@ function publicSettings() {
 }
 
 /* -------------------------------------------------------------------------- */
+/*                          Historial de sesiones                            */
+/* -------------------------------------------------------------------------- */
+
+let sessions = [];
+
+function sanitizeSession(raw) {
+  if (!isPlainObject(raw)) return null;
+  const startedAt = typeof raw.startedAt === 'string' ? raw.startedAt : '';
+  if (!startedAt) return null;
+  return {
+    id: typeof raw.id === 'string' && raw.id ? raw.id : crypto.randomUUID(),
+    instanceId: typeof raw.instanceId === 'string' ? raw.instanceId : null,
+    instanceName: String(raw.instanceName || 'Principal').slice(0, 80),
+    version: safeVersionId(raw.version) || '',
+    loader: LOADER_IDS.includes(raw.loader) ? raw.loader : 'vanilla',
+    loaderVersion: safeVersionId(raw.loaderVersion) || '',
+    accountName: String(raw.accountName || '').slice(0, 32),
+    startedAt,
+    endedAt: typeof raw.endedAt === 'string' ? raw.endedAt : null,
+    durationMs: Number.isFinite(Number(raw.durationMs)) ? Math.max(0, Number(raw.durationMs)) : 0,
+    exitCode: Number.isFinite(Number(raw.exitCode)) ? Number(raw.exitCode) : null,
+    stopped: raw.stopped === true,
+    crashed: raw.crashed === true
+  };
+}
+
+function loadSessions() {
+  const raw = readJson(FILES.sessions, []);
+  sessions = Array.isArray(raw) ? raw.map(sanitizeSession).filter(Boolean).slice(0, 200) : [];
+}
+
+function saveSessions() {
+  writeJson(FILES.sessions, sessions.slice(0, 200));
+}
+
+function startSession(meta = {}) {
+  const entry = {
+    id: crypto.randomUUID(),
+    instanceId: typeof meta.instanceId === 'string' ? meta.instanceId : null,
+    instanceName: String(meta.instanceName || 'Principal').slice(0, 80),
+    version: safeVersionId(meta.version) || '',
+    loader: LOADER_IDS.includes(meta.loader) ? meta.loader : 'vanilla',
+    loaderVersion: safeVersionId(meta.loaderVersion) || '',
+    accountName: String(meta.accountName || '').slice(0, 32),
+    startedAt: new Date().toISOString(),
+    endedAt: null,
+    durationMs: 0,
+    exitCode: null,
+    stopped: false,
+    crashed: false
+  };
+  sessions.unshift(entry);
+  if (sessions.length > 200) sessions.length = 200;
+  saveSessions();
+  return entry.id;
+}
+
+function finishSession(id, patch = {}) {
+  const entry = sessions.find((item) => item.id === id);
+  if (!entry || entry.endedAt) return null;
+  entry.endedAt = new Date().toISOString();
+  entry.durationMs = Math.max(0, Date.now() - new Date(entry.startedAt).getTime());
+  if (Number.isFinite(Number(patch.exitCode))) entry.exitCode = Number(patch.exitCode);
+  entry.stopped = patch.stopped === true;
+  entry.crashed = patch.crashed === true;
+  saveSessions();
+  return entry;
+}
+
+function publicSessions() {
+  return sessions.slice(0, 100);
+}
+
+/* -------------------------------------------------------------------------- */
+/*                      Compartir registros en mclo.gs                       */
+/* -------------------------------------------------------------------------- */
+
+function stripAnsi(text) {
+  return String(text || '').replace(/\u001b\[[0-9;?]*[A-Za-z]/g, '');
+}
+
+async function shareLog(payload = {}) {
+  let content = typeof payload.content === 'string' ? payload.content : '';
+  let source = 'consola';
+
+  if (!content.trim()) {
+    const instance = payload.instanceId
+      ? settings.instances.find((item) => item.id === payload.instanceId)
+      : activeInstance();
+    const root = instance?.gameRoot || gamePaths().gameRoot;
+    const file = path.join(root, 'logs', 'latest.log');
+    if (!fs.existsSync(file)) {
+      throw new Error('Todavía no hay ningún latest.log. Inicia el juego al menos una vez.');
+    }
+    const stat = await fs.promises.stat(file);
+    if (stat.size > 10 * 1024 * 1024) {
+      throw new Error('El registro supera los 10 MB que admite mclo.gs.');
+    }
+    content = await fs.promises.readFile(file, 'utf8');
+    source = 'latest.log';
+  }
+
+  content = stripAnsi(content).trim();
+  if (!content) throw new Error('No hay texto que compartir.');
+  if (content.length > 10 * 1024 * 1024) {
+    throw new Error('El registro supera los 10 MB que admite mclo.gs.');
+  }
+
+  const controller = new AbortController();
+  const timer = setTimeout(() => controller.abort(), 30000);
+  try {
+    const response = await fetch('https://api.mclo.gs/1/log', {
+      method: 'POST',
+      headers: {
+        'Content-Type': 'application/x-www-form-urlencoded',
+        'User-Agent': 'NexyLauncher/1.1 (Electron)'
+      },
+      body: new URLSearchParams({ content }).toString(),
+      signal: controller.signal
+    });
+    let data = null;
+    try {
+      data = await response.json();
+    } catch {}
+    if (!response.ok || !data?.success) {
+      throw new Error(data?.error || `mclo.gs rechazó el registro (código ${response.status}).`);
+    }
+    clipboard.writeText(data.url);
+    return { url: data.url, raw: data.raw || '', source, lines: content.split('\n').length, copied: true };
+  } catch (error) {
+    if (error.name === 'AbortError') throw new Error('mclo.gs tardó demasiado en responder.');
+    throw error;
+  } finally {
+    clearTimeout(timer);
+  }
+}
+
+/* -------------------------------------------------------------------------- */
+/*                    Cuenta Microsoft (sesión temporal)                      */
+/* -------------------------------------------------------------------------- */
+
+/* Inicio de sesión oficial por código de dispositivo con el cliente público de
+   Minecraft (login.live.com). No hace falta crear una aplicación de Azure ni
+   esperar la aprobación de Mojang. Los tokens viven solo en memoria: en
+   accounts.json se guarda únicamente el perfil público (nombre y UUID) para
+   poder mostrarlo entre reinicios. Al cerrar NexyLauncher la sesión caduca y
+   hay que volver a iniciar sesión para jugar con la cuenta Microsoft. */
+
+const MSA_CLIENT_ID = '00000000402b5328';
+const MSA_SCOPE = 'service::user.auth.xboxlive.com::MBI_SSL';
+const MSA_DEVICE_CODE_URL = 'https://login.live.com/oauth20_connect.srf';
+const MSA_TOKEN_URL = 'https://login.live.com/oauth20_token.srf';
+const MSA_VERIFY_URL = 'https://www.microsoft.com/link';
+const MSA_XBL_URL = 'https://user.auth.xboxlive.com/user/authenticate';
+const MSA_XSTS_URL = 'https://xsts.auth.xboxlive.com/xsts/authorize';
+const MSA_MINECRAFT_LOGIN_URL = 'https://api.minecraftservices.com/authentication/login_with_xbox';
+const MSA_ENTITLEMENTS_URL = 'https://api.minecraftservices.com/entitlements/mcstore';
+const MSA_PROFILE_URL = 'https://api.minecraftservices.com/minecraft/profile';
+
+let msaSession = null;
+let msaFlow = null;
+
+function msaPublic() {
+  return {
+    configured: true,
+    signingIn: Boolean(msaFlow),
+    signedIn: Boolean(msaSession),
+    accountId: msaSession?.accountId || null,
+    profile: msaSession ? { id: msaSession.profile.id, name: msaSession.profile.name } : null,
+    xuid: msaSession?.xuid || '',
+    ownsJava: msaSession?.ownsJava === true,
+    expiresAt: msaSession ? msaSession.expiresAt : 0
+  };
+}
+
+function msaSessionActive(account) {
+  return Boolean(
+    account &&
+    msaSession &&
+    msaSession.accountId === account.id &&
+    msaSession.expiresAt > Date.now()
+  );
+}
+
+function msaBroadcast(extra = {}) {
+  sendToRenderer('msa:status', {
+    ...msaPublic(),
+    accounts: accountsPublic(),
+    activeAccount: publicAccount(activeAccount()),
+    ...extra
+  });
+}
+
+/* Renueva la sesión unos minutos antes de que caduque. Si el flujo no devolvió
+   refresh token, solo avisa cuando la sesión ya ha caducado. */
+let msaRefreshTimer = null;
+
+function msaClearRefreshTimer() {
+  if (msaRefreshTimer) {
+    clearTimeout(msaRefreshTimer);
+    msaRefreshTimer = null;
+  }
+}
+
+function msaScheduleRefresh() {
+  msaClearRefreshTimer();
+  if (!msaSession?.expiresAt) return;
+
+  const now = Date.now();
+  const hasRefresh = Boolean(msaSession.refreshToken);
+  const target = hasRefresh ? msaSession.expiresAt - 5 * 60 * 1000 : msaSession.expiresAt;
+  const delay = Math.max(15_000, target - now);
+  if (delay > 2_147_000_000) return;
+
+  msaRefreshTimer = setTimeout(async () => {
+    msaRefreshTimer = null;
+    if (!msaSession) return;
+
+    if (!msaSession.refreshToken) {
+      if (Date.now() >= msaSession.expiresAt) {
+        msaSession = null;
+        msaBroadcast();
+      } else {
+        msaScheduleRefresh();
+      }
+      return;
+    }
+
+    try {
+      await msaEnsureFresh();
+    } catch {}
+    msaScheduleRefresh();
+  }, delay);
+  msaRefreshTimer.unref?.();
+}
+
+function msaXErrMessage(code) {
+  const messages = {
+    2148916233: 'Esta cuenta todavía no tiene un perfil de Xbox. Créalo en xbox.com y vuelve a intentarlo.',
+    2148916235: 'Xbox Live no está disponible en el país de esta cuenta.',
+    2148916236: 'La cuenta necesita verificación de adulto en la página de Xbox.',
+    2148916237: 'La cuenta necesita verificación de adulto en la página de Xbox.',
+    2148916238: 'La cuenta es de un menor y debe añadirse a una familia de un adulto.'
+  };
+  return messages[code] || `Xbox rechazó la cuenta (código ${code}).`;
+}
+
+function msaErrorMessage(data) {
+  const code = String(data?.error || '');
+  if (code === 'authorization_declined') return 'Has cancelado el inicio de sesión en Microsoft.';
+  if (code === 'expired_token' || code === 'code_expired') return 'El código ha caducado. Vuelve a iniciar sesión.';
+  if (code === 'bad_verification_code') return 'El código no es válido. Vuelve a iniciar sesión.';
+  if (code === 'invalid_grant') return 'La sesión de Microsoft caducó. Vuelve a iniciar sesión.';
+
+  const xerr = Number(data?.XErr || 0);
+  if (Number.isInteger(xerr) && xerr) return msaXErrMessage(xerr);
+
+  const detail = String(data?.error_description || data?.errorMessage || data?.Message || data?.error || '').trim();
+  if (/doesn't own|does not own|not entitled/i.test(detail)) {
+    return 'Esta cuenta no es propietaria de Minecraft: Java Edition.';
+  }
+  return detail ? detail.slice(0, 240) : 'Microsoft rechazó la solicitud de inicio de sesión.';
+}
+
+async function msaRequest(url, options = {}) {
+  const controller = new AbortController();
+  const timer = setTimeout(() => controller.abort(), options.timeout ?? 20000);
+  let response;
+  try {
+    response = await fetch(url, {
+      method: options.method || 'GET',
+      headers: {
+        'User-Agent': 'NexyLauncher/1.1 (Electron)',
+        Accept: 'application/json',
+        ...(options.headers || {})
+      },
+      body: options.body,
+      signal: controller.signal,
+      redirect: 'follow'
+    });
+  } catch {
+    clearTimeout(timer);
+    throw new Error('No se pudo conectar con Microsoft. Revisa tu conexión e inténtalo de nuevo.');
+  }
+  clearTimeout(timer);
+
+  const text = await response.text();
+  let data = null;
+  try {
+    data = text ? JSON.parse(text) : {};
+  } catch {
+    data = { raw: text.slice(0, 300) };
+  }
+
+  if (!response.ok) {
+    const error = new Error(msaErrorMessage(data));
+    error.msaCode = String(data?.error || data?.XErr || '');
+    throw error;
+  }
+  return data;
+}
+
+function msaForm(url, params) {
+  return msaRequest(url, {
+    method: 'POST',
+    headers: { 'Content-Type': 'application/x-www-form-urlencoded' },
+    body: new URLSearchParams(params).toString()
+  });
+}
+
+async function msaXblAuthenticate(accessToken) {
+  let lastError = null;
+  for (const rpsTicket of [`t=${accessToken}`, `d=${accessToken}`]) {
+    try {
+      return await msaRequest(MSA_XBL_URL, {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({
+          Properties: {
+            AuthMethod: 'RPS',
+            SiteName: 'user.auth.xboxlive.com',
+            RpsTicket: rpsTicket
+          },
+          RelyingParty: 'http://auth.xboxlive.com',
+          TokenType: 'JWT'
+        })
+      });
+    } catch (error) {
+      lastError = error;
+    }
+  }
+  throw lastError || new Error('Xbox Live rechazó la cuenta.');
+}
+
+async function msaExchange(token) {
+  const xbl = await msaXblAuthenticate(token.access_token);
+
+  const uhs = xbl?.DisplayClaims?.xui?.[0]?.uhs;
+  if (!uhs) throw new Error('Xbox Live no devolvió la identidad de la cuenta.');
+
+  const xsts = await msaRequest(MSA_XSTS_URL, {
+    method: 'POST',
+    headers: { 'Content-Type': 'application/json' },
+    body: JSON.stringify({
+      Properties: { SandboxId: 'RETAIL', UserTokens: [xbl.Token] },
+      RelyingParty: 'rp://api.minecraftservices.com/',
+      TokenType: 'JWT'
+    })
+  });
+
+  const xstsToken = xsts?.Token;
+  const xuid = xsts?.DisplayClaims?.xui?.[0]?.xid;
+  if (!xstsToken) throw new Error('Xbox Live no devolvió una sesión válida.');
+
+  const minecraft = await msaRequest(MSA_MINECRAFT_LOGIN_URL, {
+    method: 'POST',
+    headers: { 'Content-Type': 'application/json' },
+    body: JSON.stringify({ identityToken: `XBL3.0 x=${uhs};${xstsToken}` })
+  });
+
+  if (!minecraft?.access_token) throw new Error('Minecraft no devolvió un token de acceso.');
+
+  const entitlements = await msaRequest(MSA_ENTITLEMENTS_URL, {
+    headers: { Authorization: `Bearer ${minecraft.access_token}` }
+  });
+  const items = Array.isArray(entitlements?.items) ? entitlements.items : [];
+  const owns = items.some((item) => item?.name === 'game_minecraft' || item?.name === 'product_minecraft');
+  if (!owns) throw new Error('Esta cuenta no es propietaria de Minecraft: Java Edition.');
+
+  const profile = await msaRequest(MSA_PROFILE_URL, {
+    headers: { Authorization: `Bearer ${minecraft.access_token}` }
+  });
+  if (!profile?.id || !profile?.name) {
+    throw new Error('La cuenta no tiene perfil de Minecraft. Créalo en minecraft.net y vuelve a intentarlo.');
+  }
+
+  return {
+    profile: { id: profile.id, name: profile.name },
+    accessToken: minecraft.access_token,
+    clientToken: crypto.randomBytes(16).toString('hex'),
+    expiresAt: Date.now() + (Number(minecraft.expires_in) || 86400) * 1000,
+    refreshToken: typeof token.refresh_token === 'string' ? token.refresh_token : '',
+    xuid: typeof xuid === 'string' ? xuid : '',
+    ownsJava: true
+  };
+}
+
+function msaRememberAccount(session) {
+  const uuid = String(session.profile.id || '').toLowerCase();
+  let account = accounts.find((item) => item.type === 'msa' && String(item.uuid || '').toLowerCase() === uuid);
+  if (!account) {
+    account = accounts.find((item) => item.type === 'msa' && item.name.toLowerCase() === session.profile.name.toLowerCase());
+  }
+  if (!account) {
+    account = {
+      id: crypto.randomUUID(),
+      type: 'msa',
+      createdAt: new Date().toISOString()
+    };
+    accounts.push(account);
+  }
+
+  account.name = session.profile.name;
+  account.type = 'msa';
+  account.uuid = session.profile.id;
+  account.xuid = session.xuid || '';
+  account.lastUsed = new Date().toISOString();
+
+  settings.activeAccountId = account.id;
+  settings.seenWelcome = true;
+  writeJson(FILES.accounts, accounts);
+  saveSettings();
+  return account;
+}
+
+async function msaEnsureFresh(session = msaSession) {
+  if (!session) return null;
+  if (session.expiresAt - Date.now() > 10 * 60 * 1000) return session;
+  if (!session.refreshToken) {
+    if (session.expiresAt > Date.now()) return session;
+    if (msaSession === session) {
+      msaSession = null;
+      msaClearRefreshTimer();
+      msaBroadcast();
+    }
+    throw new Error('La sesión de Microsoft caducó. Vuelve a iniciar sesión.');
+  }
+
+  try {
+    const token = await msaForm(MSA_TOKEN_URL, {
+      client_id: MSA_CLIENT_ID,
+      grant_type: 'refresh_token',
+      refresh_token: session.refreshToken,
+      scope: MSA_SCOPE
+    });
+    const next = await msaExchange(token);
+    next.accountId = session.accountId;
+    if (!next.refreshToken) next.refreshToken = session.refreshToken;
+    msaSession = next;
+    msaScheduleRefresh();
+    msaBroadcast();
+    return next;
+  } catch (error) {
+    if (msaSession === session) {
+      msaSession = null;
+      msaClearRefreshTimer();
+      msaBroadcast({ error: error.message });
+    }
+    throw error;
+  }
+}
+
+function msaSchedulePoll(flow) {
+  if (flow !== msaFlow || flow.canceled) return;
+  flow.timer = setTimeout(() => msaPoll(flow), flow.interval * 1000);
+}
+
+function msaFinishFlow() {
+  const flow = msaFlow;
+  msaFlow = null;
+  if (flow?.timer) clearTimeout(flow.timer);
+  return flow;
+}
+
+function msaFailFlow(message) {
+  msaFinishFlow();
+  msaBroadcast({ error: message });
+}
+
+async function msaPoll(flow) {
+  if (flow !== msaFlow || flow.canceled) return;
+  if (Date.now() > flow.expiresAt) {
+    msaFailFlow('El código ha caducado. Vuelve a iniciar sesión.');
+    return;
+  }
+
+  try {
+    const token = await msaForm(MSA_TOKEN_URL, {
+      client_id: MSA_CLIENT_ID,
+      grant_type: 'urn:ietf:params:oauth:grant-type:device_code',
+      device_code: flow.deviceCode
+    });
+    if (flow !== msaFlow || flow.canceled) return;
+
+    const session = await msaExchange(token);
+    if (flow !== msaFlow || flow.canceled) return;
+
+    const account = msaRememberAccount(session);
+    session.accountId = account.id;
+    msaFinishFlow();
+    msaSession = session;
+    msaScheduleRefresh();
+    msaBroadcast();
+    msaSyncOfficialSkin(account).catch(() => {});
+  } catch (error) {
+    if (flow !== msaFlow || flow.canceled) return;
+    if (error.msaCode === 'authorization_pending') {
+      msaSchedulePoll(flow);
+      return;
+    }
+    if (error.msaCode === 'slow_down') {
+      flow.interval += 5;
+      msaSchedulePoll(flow);
+      return;
+    }
+    msaFailFlow(error.message);
+  }
+}
+
+async function msaBegin() {
+  msaFinishFlow();
+  const data = await msaForm(MSA_DEVICE_CODE_URL, {
+    client_id: MSA_CLIENT_ID,
+    scope: MSA_SCOPE,
+    response_type: 'device_code'
+  });
+
+  if (!data?.device_code || !data?.user_code) {
+    throw new Error('Microsoft no devolvió un código de inicio de sesión.');
+  }
+
+  const flow = {
+    deviceCode: data.device_code,
+    interval: Math.max(3, Number(data.interval) || 5),
+    expiresAt: Date.now() + (Number(data.expires_in) || 900) * 1000,
+    timer: null,
+    canceled: false
+  };
+  msaFlow = flow;
+  msaSchedulePoll(flow);
+  msaBroadcast();
+
+  return {
+    userCode: data.user_code,
+    verificationUri: data.verification_uri || MSA_VERIFY_URL,
+    expiresIn: Number(data.expires_in) || 900,
+    interval: flow.interval
+  };
+}
+
+function msaCancel() {
+  const flow = msaFlow;
+  if (flow) flow.canceled = true;
+  msaFinishFlow();
+  msaBroadcast();
+  return { ok: true };
+}
+
+function msaSignOut(accountId = null) {
+  const flow = msaFlow;
+  if (flow) flow.canceled = true;
+  msaFinishFlow();
+  if (!accountId || msaSession?.accountId === accountId) {
+    msaSession = null;
+    msaClearRefreshTimer();
+  }
+  msaBroadcast();
+  return { ok: true, ...msaPublic() };
+}
+
+function msaAuthorization(session) {
+  return {
+    access_token: session.accessToken,
+    client_token: session.clientToken,
+    uuid: session.profile.id,
+    name: session.profile.name,
+    user_properties: '{}',
+    meta: {
+      type: 'msa',
+      demo: false,
+      xuid: session.xuid || '',
+      clientId: MSA_CLIENT_ID
+    }
+  };
+}
+
+/* -------------------------------------------------------------------------- */
 /*                                 Arranque                                   */
 /* -------------------------------------------------------------------------- */
 
@@ -1102,24 +2722,46 @@ function loadData() {
   const rawSettings = readJson(FILES.settings, {});
   const rawAccounts = readJson(FILES.accounts, []);
   const rawServers = readJson(FILES.servers, []);
+  const rawLocalServers = readJson(FILES.localServers, []);
 
   accounts = Array.isArray(rawAccounts)
     ? rawAccounts
         .filter((account) => isPlainObject(account) && typeof account.id === 'string' && sanitizeUsername(account.name))
-        .map((account) => ({
-          id: account.id,
-          name: String(account.name).trim(),
-          type: 'offline',
-          createdAt: typeof account.createdAt === 'string' ? account.createdAt : new Date().toISOString(),
-          lastUsed: typeof account.lastUsed === 'string' ? account.lastUsed : null
-        }))
+        .map((account) => {
+          const uuid = String(account.uuid || '').trim();
+          const type = account.type === 'msa' && /^[0-9a-f]{32}$/i.test(uuid) ? 'msa' : 'offline';
+          const clean = {
+            id: account.id,
+            name: String(account.name).trim(),
+            type,
+            createdAt: typeof account.createdAt === 'string' ? account.createdAt : new Date().toISOString(),
+            lastUsed: typeof account.lastUsed === 'string' ? account.lastUsed : null
+          };
+          if (type === 'msa') {
+            clean.uuid = uuid.toLowerCase();
+            clean.xuid = typeof account.xuid === 'string' ? account.xuid.slice(0, 32) : '';
+          }
+          if (account.skinSource === 'custom' || account.skinSource === 'microsoft') {
+            clean.skinSource = account.skinSource;
+            clean.skinUpdatedAt = typeof account.skinUpdatedAt === 'string' ? account.skinUpdatedAt : null;
+          }
+          return clean;
+        })
     : [];
 
   const unique = new Map();
   for (const account of accounts) {
-    if (!unique.has(account.name.toLowerCase())) unique.set(account.name.toLowerCase(), account);
+    const key = account.type === 'msa' ? `msa:${account.uuid}` : `offline:${account.name.toLowerCase()}`;
+    if (!unique.has(key)) unique.set(key, account);
   }
   accounts = [...unique.values()];
+
+  for (const account of accounts) {
+    if (account.skinSource && !fs.existsSync(skinPath(account.id))) {
+      delete account.skinSource;
+      delete account.skinUpdatedAt;
+    }
+  }
 
   servers = Array.isArray(rawServers)
     ? rawServers
@@ -1132,12 +2774,30 @@ function loadData() {
         }))
     : [];
 
+  localServers = Array.isArray(rawLocalServers)
+    ? rawLocalServers.map(sanitizeLocalServer).filter(Boolean)
+    : [];
+  const seenLocalIds = new Set();
+  const seenLocalFolders = new Set();
+  localServers = localServers.filter((server) => {
+    const id = server.id.toLowerCase();
+    const folder = server.folder.toLowerCase();
+    if (seenLocalIds.has(id) || seenLocalFolders.has(folder)) return false;
+    seenLocalIds.add(id);
+    seenLocalFolders.add(folder);
+    return true;
+  });
+
   settings = {
     ...defaults,
     ...(isPlainObject(rawSettings) ? rawSettings : {}),
     memory: sanitizeMemory(rawSettings?.memory, defaults.memory),
     resolution: sanitizeResolution(rawSettings?.resolution, defaults.resolution)
   };
+
+  for (const key of Object.keys(settings)) {
+    if (!Object.prototype.hasOwnProperty.call(defaults, key)) delete settings[key];
+  }
 
   settings.theme = THEMES.includes(settings.theme) ? settings.theme : defaults.theme;
   settings.language = settings.language === 'en' ? 'en' : 'es';
@@ -1155,6 +2815,8 @@ function loadData() {
   settings.gameArgs = typeof settings.gameArgs === 'string' ? settings.gameArgs.slice(0, 4000) : '';
   settings.minimizeOnLaunch = settings.minimizeOnLaunch !== false;
   settings.autoLogin = settings.autoLogin !== false;
+  settings.autoBackupWorlds = settings.autoBackupWorlds !== false;
+  settings.backupKeep = Math.round(clamp(Number(settings.backupKeep) || 6, 1, 50));
   settings.showSnapshots = settings.showSnapshots === true;
   settings.lastVersion = safeVersionId(settings.lastVersion) || '';
   settings.lastLoader = LOADER_IDS.includes(settings.lastLoader) ? settings.lastLoader : 'vanilla';
@@ -1171,16 +2833,245 @@ function loadData() {
     ? settings.gameRoot
     : defaults.gameRoot;
   normalizeInstances(rawSettings);
+  migrateLegacyInstanceRoots();
+  for (const instance of settings.instances) {
+    const exists = fs.existsSync(instance.gameRoot);
+    if (exists) adoptInstanceFiles(instance);
+    /* Las instancias antiguas no tienen marcador: se les genera una carátula
+       inicial. Si la carpeta ya tiene ficha con el icono vacío es porque el
+       usuario lo quitó, así que no se vuelve a crear. */
+    if (!instance.cover && instance.iconAuto !== true) {
+      const marker = exists ? readInstanceMarker(instance.gameRoot) : null;
+      if (!marker) instance.iconAuto = true;
+    }
+    /* writeInstanceMarker crea la carpeta si aún no existe, así una
+       instalación nueva ya nace con su ficha y su descripción. */
+    writeInstanceMarker(instance);
+    /* Tras generar el icono se adopta para que la interfaz lo muestre ya
+       en el primer arranque. */
+    if (!instance.cover) adoptInstanceFiles(instance);
+  }
   settings.activeAccountId = accounts.some((account) => account.id === settings.activeAccountId)
     ? settings.activeAccountId
     : null;
 
   if (!fs.existsSync(FILES.settings)) saveSettings();
   ensureGameDirectories();
+  loadSessions();
+  migrateModsFolders();
 }
 
 function activeAccount() {
   return accounts.find((account) => account.id === settings.activeAccountId) || null;
+}
+
+/* -------------------------------------------------------------------------- */
+/*                            Skins de los perfiles                           */
+/* -------------------------------------------------------------------------- */
+
+const skinCache = new Map();
+const skinSyncing = new Set();
+
+function skinPath(id) {
+  return path.join(SKINS_DIR, `${id}.png`);
+}
+
+function readSkinFile(id) {
+  try {
+    return fs.readFileSync(skinPath(id));
+  } catch {
+    return null;
+  }
+}
+
+/* Extrae la cara y la capa de la cabeza de la skin. Se cachea por fecha y
+   tamaño del archivo para no decodificar la imagen en cada render. */
+function skinImages(id) {
+  const file = skinPath(id);
+  let stat;
+  try {
+    stat = fs.statSync(file);
+  } catch {
+    skinCache.delete(id);
+    return null;
+  }
+
+  const cached = skinCache.get(id);
+  if (cached && cached.mtimeMs === stat.mtimeMs && cached.size === stat.size) return cached;
+
+  let image;
+  try {
+    image = nativeImage.createFromBuffer(fs.readFileSync(file));
+  } catch {
+    skinCache.delete(id);
+    return null;
+  }
+  if (image.isEmpty()) {
+    skinCache.delete(id);
+    return null;
+  }
+
+  const size = image.getSize();
+  if (size.width !== 64 || (size.height !== 64 && size.height !== 32)) {
+    skinCache.delete(id);
+    return null;
+  }
+
+  let face = '';
+  let overlay = '';
+  try {
+    face = image.crop({ x: 8, y: 8, width: 8, height: 8 })
+      .resize({ width: 64, height: 64, quality: 'good' })
+      .toPNG()
+      .toString('base64');
+    /* Las skins 64×32 no tienen segunda capa: la zona de la derecha es espacio
+       sin usar y suele estar en negro. Solo las 64×64 tienen sombrero/capa. */
+    if (size.height === 64) {
+      overlay = image.crop({ x: 40, y: 8, width: 8, height: 8 })
+        .resize({ width: 64, height: 64, quality: 'good' })
+        .toPNG()
+        .toString('base64');
+    }
+  } catch {
+    skinCache.delete(id);
+    return null;
+  }
+
+  const entry = {
+    mtimeMs: stat.mtimeMs,
+    size: stat.size,
+    width: size.width,
+    height: size.height,
+    face: `data:image/png;base64,${face}`,
+    overlay: overlay ? `data:image/png;base64,${overlay}` : '',
+    sheet: `data:image/png;base64,${fs.readFileSync(file).toString('base64')}`
+  };
+  skinCache.set(id, entry);
+  return entry;
+}
+
+function normalizeSkin(buffer) {
+  if (!Buffer.isBuffer(buffer) || !buffer.length) throw new Error('No se pudo leer la skin.');
+  if (buffer.length > 2 * 1024 * 1024) throw new Error('La skin es demasiado grande (máximo 2 MB).');
+  const image = nativeImage.createFromBuffer(buffer);
+  if (image.isEmpty()) throw new Error('El archivo no es una imagen PNG válida.');
+  const size = image.getSize();
+  if (size.width !== 64 || (size.height !== 64 && size.height !== 32)) {
+    throw new Error('La skin debe medir 64×64 o 64×32 píxeles.');
+  }
+  return image.toPNG();
+}
+
+function writeSkinFile(account, png, source) {
+  ensureDir(SKINS_DIR);
+  fs.writeFileSync(skinPath(account.id), png);
+  skinCache.delete(account.id);
+  account.skinSource = source;
+  account.skinUpdatedAt = new Date().toISOString();
+  writeJson(FILES.accounts, accounts);
+}
+
+function deleteSkinFile(id) {
+  try {
+    fs.unlinkSync(skinPath(id));
+  } catch {}
+  skinCache.delete(id);
+}
+
+function removeSkinFile(account) {
+  deleteSkinFile(account.id);
+  delete account.skinSource;
+  delete account.skinUpdatedAt;
+  writeJson(FILES.accounts, accounts);
+}
+
+function skinInfo(account) {
+  const entry = skinImages(account.id);
+  return {
+    source: entry ? (account.skinSource === 'custom' ? 'custom' : 'microsoft') : 'none',
+    face: entry?.face || null,
+    overlay: entry?.overlay || null,
+    sheet: entry?.sheet || null,
+    width: entry?.width || 0,
+    height: entry?.height || 0
+  };
+}
+
+async function downloadSkinFile(url) {
+  const controller = new AbortController();
+  const timer = setTimeout(() => controller.abort(), 15000);
+  try {
+    const response = await fetch(url, {
+      headers: { 'User-Agent': 'NexyLauncher/1.1 (Electron)', Accept: 'image/png' },
+      signal: controller.signal,
+      redirect: 'follow'
+    });
+    if (!response.ok) throw new Error('No se pudo descargar la skin de Minecraft.');
+    const declared = Number(response.headers.get('content-length') || 0);
+    if (declared > 2 * 1024 * 1024) throw new Error('La skin de Minecraft es demasiado grande.');
+    const buffer = Buffer.from(await response.arrayBuffer());
+    if (buffer.length > 2 * 1024 * 1024) throw new Error('La skin de Minecraft es demasiado grande.');
+    return buffer;
+  } finally {
+    clearTimeout(timer);
+  }
+}
+
+async function msaSkinUrl(uuid) {
+  const id = String(uuid || '').replace(/-/g, '').toLowerCase();
+  if (!/^[0-9a-f]{32}$/.test(id)) return '';
+  const data = await msaRequest(`https://sessionserver.mojang.com/session/minecraft/profile/${id}`, {
+    timeout: 15000
+  });
+  const property = Array.isArray(data?.properties)
+    ? data.properties.find((item) => item?.name === 'textures')
+    : null;
+  if (!property?.value) return '';
+  try {
+    const decoded = JSON.parse(Buffer.from(property.value, 'base64').toString('utf8'));
+    const url = decoded?.textures?.SKIN?.url;
+    return typeof url === 'string' && /^https?:\/\//i.test(url) ? url.replace(/^http:/i, 'https:') : '';
+  } catch {
+    return '';
+  }
+}
+
+/* Descarga la skin oficial de una cuenta Microsoft y la guarda como caché
+   local. Si el usuario eligió una skin personalizada no se sobrescribe. */
+async function msaSyncOfficialSkin(account, { force = false } = {}) {
+  if (!account || account.type !== 'msa') return null;
+  if (!force && account.skinSource === 'custom') return null;
+  if (skinSyncing.has(account.id)) return null;
+  skinSyncing.add(account.id);
+  try {
+    const url = await msaSkinUrl(account.uuid);
+    if (!url) return null;
+    const png = normalizeSkin(await downloadSkinFile(url));
+    writeSkinFile(account, png, 'microsoft');
+    msaBroadcast();
+    return skinInfo(account);
+  } catch (error) {
+    console.warn('No se pudo actualizar la skin de Microsoft:', humanError(error));
+    return null;
+  } finally {
+    skinSyncing.delete(account.id);
+  }
+}
+
+function publicAccount(account) {
+  if (!account) return null;
+  const entry = skinImages(account.id);
+  return {
+    ...account,
+    sessionActive: account.type === 'msa' ? msaSessionActive(account) : true,
+    sessionExpiresAt: account.type === 'msa' && msaSessionActive(account) ? msaSession.expiresAt : 0,
+    face: entry?.face || null,
+    faceOverlay: entry?.overlay || null
+  };
+}
+
+function accountsPublic() {
+  return accounts.map(publicAccount);
 }
 
 function sendToRenderer(channel, payload) {
@@ -1256,6 +3147,13 @@ function createWindow() {
     }
   });
 
+  mainWindow.webContents.on('console-message', (event, level, message) => {
+    if (IS_DEV || SMOKE) {
+      const label = ['debug', 'info', 'warning', 'error'][level] || 'log';
+      console.log(`[renderer:${label}] ${message}`);
+    }
+  });
+
   if (state.maximized) mainWindow.maximize();
 
   mainWindow.loadFile('index.html');
@@ -1282,7 +3180,7 @@ function createWindow() {
         } finally {
           app.quit();
         }
-      }, 3200);
+      }, 5000);
     }
   });
 
@@ -1293,13 +3191,6 @@ function createWindow() {
 
   mainWindow.webContents.on('will-navigate', (event, url) => {
     if (!url.startsWith('file://')) event.preventDefault();
-  });
-
-  mainWindow.webContents.on('console-message', (event, level, message) => {
-    if (IS_DEV || SMOKE) {
-      const label = ['debug', 'info', 'warning', 'error'][level] || 'log';
-      console.log(`[renderer:${label}] ${message}`);
-    }
   });
 
   mainWindow.on('maximize', () => {
@@ -1400,6 +3291,7 @@ function candidateJavaPaths() {
       path.join(userProfile, '.jdks'),
       path.join(appData, '.minecraft', 'runtime'),
       path.join(DATA_DIR, '.minecraft', 'runtime'),
+      JAVA_DIR,
       path.join(settings?.gameRoot || '', 'runtime')
     ];
 
@@ -1702,6 +3594,64 @@ async function installJavaInto(major, destination, onProgress = () => {}) {
   } finally {
     fs.promises.rm(archive, { force: true }).catch(() => {});
   }
+}
+
+function pickCompatibleJava(required, detected) {
+  const sorted = (Array.isArray(detected) ? detected : [])
+    .slice()
+    .sort((a, b) => a.major - b.major || a.version.localeCompare(b.version, undefined, { numeric: true }));
+  const exact = sorted.find((info) => info.major === required);
+  if (exact) return exact;
+  return required > 8 ? sorted.find((info) => info.major > required) || null : null;
+}
+
+async function inspectManagedJava(required) {
+  const destination = path.join(JAVA_DIR, `jre-${required}`);
+  if (!fs.existsSync(destination)) return null;
+  const found = new Set();
+  collectJavaPathsFrom(destination, 4, found, { visited: 0 });
+  const infos = (await Promise.all([...found].map((candidate) => inspectJavaPath(candidate)))).filter(Boolean);
+  return pickCompatibleJava(required, infos);
+}
+
+/* Instala Java en la carpeta del launcher (data\java\jre-N), sin pedir ruta. */
+async function ensureJavaInstalled(major, onProgress = () => {}) {
+  const required = Number(major);
+  if (!Number.isInteger(required) || required < 8 || required > 99) {
+    throw new Error('Versión de Java no válida.');
+  }
+
+  const managed = await inspectManagedJava(required);
+  if (managed) {
+    if (settings.javaPaths?.[String(required)] !== managed.path) {
+      settings.javaPaths[String(required)] = managed.path;
+      saveSettings();
+    }
+    return { java: managed, installed: false };
+  }
+
+  if (javaInstalls.has(required)) return javaInstalls.get(required);
+
+  const job = (async () => {
+    const destination = path.join(JAVA_DIR, `jre-${required}`);
+    if (fs.existsSync(destination)) {
+      await fs.promises.rm(destination, { recursive: true, force: true }).catch(() => {});
+    }
+    const emit = (progress) => {
+      sendToRenderer('java:install-progress', { major: required, ...progress });
+      try {
+        onProgress(progress);
+      } catch {
+        /* el aviso al renderer no debe romper la instalación */
+      }
+    };
+    emit({ phase: 'download', percent: 0 });
+    const java = await installJavaInto(required, destination, emit);
+    return { java, installed: true };
+  })().finally(() => javaInstalls.delete(required));
+
+  javaInstalls.set(required, job);
+  return job;
 }
 
 /* -------------------------------------------------------------------------- */
@@ -2301,7 +4251,7 @@ async function fetchManifest(force = false) {
 
   try {
     const response = await fetch('https://piston-meta.mojang.com/mc/game/version_manifest_v2.json', {
-      headers: { 'User-Agent': 'NexyLauncher/1.0 (Electron)', Accept: 'application/json' },
+      headers: { 'User-Agent': 'NexyLauncher/1.1 (Electron)', Accept: 'application/json' },
       signal: AbortSignal.timeout(20000)
     });
     if (!response.ok) throw new Error(`Mojang respondió HTTP ${response.status}`);
@@ -3064,6 +5014,7 @@ async function installModrinthVersionFile(version, options = {}) {
   try {
     const target = uniqueModTarget(directory, safeName);
     await fs.promises.rename(temporary, target);
+    removeDisabledModCopy(safeName);
     const installedName = path.basename(target);
     recordInstalledMod(installedName, metadata);
     return { file: installedName, alreadyInstalled: false };
@@ -3183,7 +5134,7 @@ async function curseforgeRequest(pathname, options = {}) {
     const response = await fetch(`${CURSEFORGE_API}${pathname}`, {
       headers: {
         'x-api-key': key,
-        'User-Agent': 'NexyLauncher/1.0 (Electron)',
+        'User-Agent': 'NexyLauncher/1.1 (Electron)',
         Accept: 'application/json'
       },
       signal: controller.signal
@@ -3350,6 +5301,7 @@ async function curseforgeInstall(payload = {}) {
 
   const target = uniqueModTarget(directory, safeName);
   await fs.promises.rename(temporary, target);
+  removeDisabledModCopy(safeName);
 
   return {
     provider: 'curseforge',
@@ -3430,56 +5382,185 @@ function forgetInstalledMod(filename) {
   writeModIndex(index);
 }
 
+function modsDisabledDirectory() {
+  return path.join(gamePaths().mods, '.desactivados');
+}
+
+/* Un mod vive en mods/ cuando está activo y en mods/.desactivados/ cuando no.
+   Así la carpeta que lee Minecraft solo contiene lo que se va a cargar. */
+function modLocation(file) {
+  const name = path.basename(String(file || '')).replace(/\.disabled$/i, '');
+  if (!name || !/\.jar$/i.test(name)) return null;
+  const active = path.join(gamePaths().mods, name);
+  const inactive = path.join(modsDisabledDirectory(), name);
+  const hasActive = fs.existsSync(active);
+  const hasInactive = fs.existsSync(inactive);
+  if (!hasActive && !hasInactive) return null;
+  return { name, active: hasActive ? active : null, inactive: hasInactive ? inactive : null };
+}
+
+function modAbsolutePath(file) {
+  const location = modLocation(file);
+  if (!location) return null;
+  return location.active || location.inactive;
+}
+
 async function listMods() {
   const directory = gamePaths().mods;
+  const disabledDirectory = modsDisabledDirectory();
   ensureDir(directory);
+  ensureDir(disabledDirectory);
   const index = readModIndex();
-  let entries;
-  try {
-    entries = await fs.promises.readdir(directory, { withFileTypes: true });
-  } catch {
-    return [];
-  }
 
-  const result = [];
-  for (const entry of entries) {
-    if (!entry.isFile()) continue;
-    if (!/\.jar(\.disabled)?$/i.test(entry.name)) continue;
-    let stat;
+  const read = async (dir, kind) => {
+    let entries;
     try {
-      stat = await fs.promises.stat(path.join(directory, entry.name));
+      entries = await fs.promises.readdir(dir, { withFileTypes: true });
     } catch {
-      continue;
+      return [];
     }
-    const key = modIndexKey(entry.name);
-    const metadata = key && isPlainObject(index[key]) ? index[key] : null;
-    result.push({
-      file: entry.name,
-      enabled: !/\.disabled$/i.test(entry.name),
-      size: stat.size,
-      modified: stat.mtime.toISOString(),
-      projectId: safeProjectId(metadata?.projectId) || null,
-      versionId: safeProjectId(metadata?.versionId) || null,
-      name: truncateText(metadata?.name, 120) || null,
-      versionNumber: truncateText(metadata?.versionNumber, 80) || null
-    });
+    const mods = [];
+    for (const entry of entries) {
+      if (!entry.isFile()) continue;
+      /* En mods/ solo cuentan los .jar; los .jar.disabled antiguos se siguen
+         leyendo hasta que la migración los mueve a .desactivados/. */
+      if (kind === 'active') {
+        if (!/\.jar$/i.test(entry.name)) continue;
+      } else if (!/\.jar(\.disabled)?$/i.test(entry.name)) {
+        continue;
+      }
+      let stat;
+      try {
+        stat = await fs.promises.stat(path.join(dir, entry.name));
+      } catch {
+        continue;
+      }
+      const name = entry.name.replace(/\.disabled$/i, '');
+      const key = modIndexKey(name);
+      const metadata = key && isPlainObject(index[key]) ? index[key] : null;
+      mods.push({
+        file: name,
+        enabled: kind === 'active',
+        folder: kind === 'active' ? 'mods' : 'desactivados',
+        size: stat.size,
+        modified: stat.mtime.toISOString(),
+        projectId: safeProjectId(metadata?.projectId) || null,
+        versionId: safeProjectId(metadata?.versionId) || null,
+        name: truncateText(metadata?.name, 120) || null,
+        versionNumber: truncateText(metadata?.versionNumber, 80) || null
+      });
+    }
+    return mods;
+  };
+
+  const all = [...(await read(directory, 'active')), ...(await read(disabledDirectory, 'disabled'))];
+  const unique = new Map();
+  for (const mod of all) {
+    const key = mod.file.toLowerCase();
+    const existing = unique.get(key);
+    if (!existing || (mod.enabled && !existing.enabled)) unique.set(key, mod);
   }
 
-  return result.sort((a, b) => Number(b.enabled) - Number(a.enabled) || a.file.localeCompare(b.file, undefined, { sensitivity: 'base' }));
+  return [...unique.values()].sort((a, b) => Number(b.enabled) - Number(a.enabled) || a.file.localeCompare(b.file, undefined, { sensitivity: 'base' }));
 }
 
 async function setModEnabled(file, enabled) {
-  const directory = gamePaths().mods;
-  const base = path.basename(String(file || ''));
-  if (!base) throw new Error('Archivo inválido.');
-  const source = path.join(directory, base);
-  if (!fs.existsSync(source)) throw new Error('Ese mod ya no existe.');
-  const isEnabled = !/\.disabled$/i.test(base);
-  if (isEnabled === Boolean(enabled)) return false;
-  const target = enabled ? source.replace(/\.disabled$/i, '') : `${source}.disabled`;
-  if (fs.existsSync(target)) throw new Error('Ya existe un archivo con ese nombre.');
+  const mods = gamePaths().mods;
+  const disabled = modsDisabledDirectory();
+  const name = path.basename(String(file || '')).replace(/\.disabled$/i, '');
+  if (!name || !/\.jar$/i.test(name)) throw new Error('Archivo inválido.');
+  const target = enabled ? path.join(mods, name) : path.join(disabled, name);
+  const source = enabled ? path.join(disabled, name) : path.join(mods, name);
+  const alreadyThere = fs.existsSync(target);
+  const sourceExists = fs.existsSync(source);
+
+  if (!sourceExists && alreadyThere) return false;
+  if (!sourceExists) throw new Error('Ese mod ya no existe.');
+  if (alreadyThere) throw new Error('Ya existe un archivo con ese nombre.');
+
+  ensureDir(path.dirname(target));
   await fs.promises.rename(source, target);
   return true;
+}
+
+/* Al instalar un mod activo con el mismo nombre que una copia desactivada se
+   quita la copia antigua; si no, quedarían dos archivos iguales (uno en mods/
+   y otro en mods/.desactivados/) y desactivarlo después fallaría. */
+function removeDisabledModCopy(filename) {
+  const name = sanitizeModName(filename);
+  if (!name) return false;
+  const candidates = [
+    path.join(modsDisabledDirectory(), name),
+    path.join(gamePaths().mods, `${name}.disabled`)
+  ];
+  let removed = false;
+  for (const candidate of candidates) {
+    try {
+      if (!fs.existsSync(candidate)) continue;
+      fs.unlinkSync(candidate);
+      removed = true;
+    } catch (error) {
+      console.warn(`No se pudo quitar la copia desactivada de ${name}:`, humanError(error));
+    }
+  }
+  return removed;
+}
+
+/* Borra el mod esté activo o desactivado, incluidas copias duplicadas que
+   hayan podido quedar de versiones anteriores. */
+function removeModFiles(filename) {
+  const name = sanitizeModName(filename);
+  if (!name) return 0;
+  const candidates = [
+    path.join(gamePaths().mods, name),
+    path.join(modsDisabledDirectory(), name),
+    path.join(gamePaths().mods, `${name}.disabled`)
+  ];
+  let removed = 0;
+  for (const candidate of candidates) {
+    try {
+      if (!fs.existsSync(candidate)) continue;
+      fs.unlinkSync(candidate);
+      removed++;
+    } catch (error) {
+      console.warn(`No se pudo borrar ${candidate}:`, humanError(error));
+    }
+  }
+  return removed;
+}
+
+/* Convierte los antiguos *.jar.disabled de mods/ en archivos normales dentro
+   de mods/.desactivados/. Se ejecuta al iniciar, una vez por instancia. */
+function migrateModsFolders() {
+  for (const instance of settings.instances || []) {
+    const mods = path.join(instance.gameRoot, 'mods');
+    if (!fs.existsSync(mods)) continue;
+    const disabled = path.join(mods, '.desactivados');
+    ensureDir(disabled);
+    let entries;
+    try {
+      entries = fs.readdirSync(mods, { withFileTypes: true });
+    } catch {
+      continue;
+    }
+    for (const entry of entries) {
+      if (!entry.isFile() || !/\.jar\.disabled$/i.test(entry.name)) continue;
+      const name = entry.name.replace(/\.disabled$/i, '');
+      const source = path.join(mods, entry.name);
+      const target = path.join(disabled, name);
+      try {
+        /* Si ya hay una copia activa o desactivada de ese mod, este archivo
+           antiguo era un duplicado invisible para la lista: se elimina. */
+        if (fs.existsSync(target) || fs.existsSync(path.join(mods, name))) {
+          fs.unlinkSync(source);
+          continue;
+        }
+        fs.renameSync(source, target);
+      } catch (error) {
+        console.warn(`No se pudo mover ${entry.name} a .desactivados/:`, humanError(error));
+      }
+    }
+  }
 }
 
 async function selectModVersion(projectId, file) {
@@ -3595,6 +5676,8 @@ async function updateModrinthVersionFile(version, oldMod) {
   assertHttpUrl(file.url, ['modrinth.com']);
   const directory = gamePaths().mods;
   ensureDir(directory);
+  const disabledDirectory = modsDisabledDirectory();
+  ensureDir(disabledDirectory);
   const safeName = sanitizeModName(file.filename);
   if (!safeName) throw new Error('El nombre del archivo del mod no es válido.');
   if (file.size > MAX_MOD_BYTES) throw new Error('El mod supera el límite de 250 MB.');
@@ -3607,20 +5690,18 @@ async function updateModrinthVersionFile(version, oldMod) {
     sha1: file.hashes?.sha1 || undefined
   });
 
-  const oldPath = path.join(directory, path.basename(oldMod.file));
-  const wasDisabled = /\.disabled$/i.test(oldMod.file);
-  const target = path.join(directory, safeName);
+  const wasDisabled = oldMod.enabled === false;
+  const targetDirectory = wasDisabled ? disabledDirectory : directory;
+  const oldPath = modAbsolutePath(oldMod.file);
+  const target = path.join(targetDirectory, safeName);
   try {
-    const finalTarget = fs.existsSync(target) && path.resolve(target) !== path.resolve(oldPath)
-      ? uniqueModTarget(directory, safeName)
+    const finalTarget = fs.existsSync(target) && (!oldPath || path.resolve(target) !== path.resolve(oldPath))
+      ? uniqueModTarget(targetDirectory, safeName)
       : target;
-    if (fs.existsSync(oldPath)) await fs.promises.unlink(oldPath);
+    if (oldPath && fs.existsSync(oldPath)) await fs.promises.unlink(oldPath);
     await fs.promises.rename(temporary, finalTarget);
-    let finalName = path.basename(finalTarget);
-    if (wasDisabled) {
-      finalName = `${finalName}.disabled`;
-      await fs.promises.rename(finalTarget, path.join(directory, finalName));
-    }
+    if (!wasDisabled) removeDisabledModCopy(safeName);
+    const finalName = path.basename(finalTarget);
     recordInstalledMod(finalName, {
       projectId: version.projectId,
       versionId: version.id,
@@ -3687,6 +5768,7 @@ async function addModFiles(paths) {
       }
       const target = uniqueModTarget(directory, name);
       await fs.promises.copyFile(source, target);
+      removeDisabledModCopy(name);
       added.push(path.basename(target));
     } catch {
       skipped.push(name);
@@ -3708,6 +5790,7 @@ async function addModBuffer(name, data) {
 
   const target = uniqueModTarget(directory, safeName);
   await fs.promises.writeFile(target, buffer);
+  removeDisabledModCopy(safeName);
   return { added: path.basename(target), skipped: [], mods: await listMods() };
 }
 
@@ -3913,6 +5996,86 @@ async function backupWorld(name) {
   return { file: path.basename(target), size: fs.statSync(target).size };
 }
 
+/* Los backups se llaman "<mundo>-<fecha>.zip". El mundo puede llevar guiones,
+   así que se separa por la marca de fecha completa. */
+function worldBackupWorld(file) {
+  const match = /^(.+)-(\d{4}-\d{2}-\d{2}T[\d-]+Z)\.zip$/i.exec(String(file || ''));
+  return match ? match[1] : null;
+}
+
+async function pruneWorldBackups() {
+  const keep = Math.max(1, Number(settings.backupKeep) || 6);
+  const backups = await listWorldBackups();
+  const groups = new Map();
+  for (const backup of backups) {
+    const world = worldBackupWorld(backup.file);
+    if (!world) continue;
+    if (!groups.has(world)) groups.set(world, []);
+    groups.get(world).push(backup);
+  }
+  let removed = 0;
+  for (const list of groups.values()) {
+    list.sort((a, b) => String(b.modified).localeCompare(String(a.modified)));
+    for (const old of list.slice(keep)) {
+      try {
+        await deleteWorldBackup(old.file);
+        removed++;
+      } catch {}
+    }
+  }
+  return removed;
+}
+
+/* Copia antes de lanzar solo los mundos que han cambiado desde su última
+   copia. Evita repetir zips de mundos que no se han tocado. */
+async function autoBackupBeforeLaunch() {
+  if (settings.autoBackupWorlds === false) return { created: 0, skipped: 0 };
+  const directory = worldsDirectory();
+  let entries;
+  try {
+    entries = await fs.promises.readdir(directory, { withFileTypes: true });
+  } catch {
+    return { created: 0, skipped: 0 };
+  }
+  const worlds = entries.filter((entry) => entry.isDirectory()).map((entry) => entry.name);
+  if (!worlds.length) return { created: 0, skipped: 0 };
+
+  let backups = [];
+  try {
+    backups = await listWorldBackups();
+  } catch {}
+
+  let created = 0;
+  let skipped = 0;
+  for (const world of worlds) {
+    let levelTime = 0;
+    try {
+      levelTime = fs.statSync(path.join(directory, world, 'level.dat')).mtimeMs;
+    } catch {}
+    if (!levelTime) {
+      skipped++;
+      continue;
+    }
+    const newest = backups
+      .filter((backup) => worldBackupWorld(backup.file) === world)
+      .reduce((max, backup) => Math.max(max, new Date(backup.modified).getTime()), 0);
+    if (newest && levelTime <= newest) {
+      skipped++;
+      continue;
+    }
+    await new Promise((resolve) => setImmediate(resolve));
+    try {
+      await backupWorld(world);
+      created++;
+    } catch (error) {
+      console.warn(`No se pudo hacer la copia automática de ${world}:`, humanError(error));
+    }
+  }
+
+  if (created) await pruneWorldBackups().catch(() => {});
+  return { created, skipped };
+}
+
 async function listWorldBackups() {
   const directory = worldBackupsDirectory();
   ensureDir(directory);
@@ -4086,7 +6249,18 @@ function uniqueInstanceName(base) {
   return `${clean.slice(0, 30)}-${Date.now().toString(36)}`;
 }
 
-function registerInstance({ name, root, version, loader, loaderVersion, source, description }) {
+function registerInstance({
+  name,
+  root,
+  version,
+  loader,
+  loaderVersion,
+  source,
+  description,
+  cover = '',
+  activate = true,
+  prepare = true
+}) {
   const instance = {
     id: crypto.randomUUID(),
     name: uniqueInstanceName(name),
@@ -4097,19 +6271,1027 @@ function registerInstance({ name, root, version, loader, loaderVersion, source, 
     loader: normalizeLoader(loader) || 'vanilla',
     loaderVersion: safeVersionId(loaderVersion) || '',
     description: sanitizeInstanceDescription(description),
-    cover: '',
+    cover: sanitizeInstanceCover(cover),
+    iconAuto: !sanitizeInstanceCover(cover),
     settings: normalizeInstanceSettings(null),
     source: typeof source === 'string' ? source.slice(0, 80) : 'import'
   };
   if (instance.loader === 'vanilla') instance.loaderVersion = '';
   settings.instances.push(instance);
   ensureDir(instance.gameRoot);
-  for (const directory of ['mods', 'versions', 'logs', 'saves', 'resourcepacks', 'shaderpacks']) {
-    ensureDir(path.join(instance.gameRoot, directory));
+  if (prepare) {
+    for (const directory of ['mods', 'versions', 'logs', 'saves', 'resourcepacks', 'shaderpacks']) {
+      ensureDir(path.join(instance.gameRoot, directory));
+    }
   }
   writeInstanceMarker(instance);
-  switchInstance(instance.id);
+  if (activate) switchInstance(instance.id);
   return instance;
+}
+
+/* -------------------------------------------------------------------------- */
+/*           Instancias de otros launchers: detectar e importar               */
+/* -------------------------------------------------------------------------- */
+
+const MAX_LAUNCHER_META_BYTES = 2 * 1024 * 1024;
+const MAX_LAUNCHER_IMPORT = 200;
+
+function fileStatSafe(target) {
+  try {
+    return fs.statSync(target);
+  } catch {
+    return null;
+  }
+}
+
+function isDirectory(target) {
+  const stat = fileStatSafe(target);
+  return Boolean(stat?.isDirectory());
+}
+
+function isFile(target) {
+  const stat = fileStatSafe(target);
+  return Boolean(stat?.isFile());
+}
+
+/* Los metadatos de otros launchers son archivos ajenos: nunca se leen sin
+   limitar el tamaño ni se deja que un JSON enorme bloquee el proceso. */
+function readJsonLimited(file, limit = MAX_LAUNCHER_META_BYTES) {
+  try {
+    const stat = fileStatSafe(file);
+    if (!stat?.isFile() || stat.size <= 0 || stat.size > limit) return null;
+    const content = fs.readFileSync(file, 'utf8').replace(/^\uFEFF/, '');
+    return JSON.parse(content);
+  } catch {
+    return null;
+  }
+}
+
+function readTextLimited(file, limit = 512 * 1024) {
+  try {
+    const stat = fileStatSafe(file);
+    if (!stat?.isFile() || stat.size <= 0 || stat.size > limit) return '';
+    return fs.readFileSync(file, 'utf8').replace(/^\uFEFF/, '');
+  } catch {
+    return '';
+  }
+}
+
+function findFileInsensitive(directory, name) {
+  const target = String(name || '').toLowerCase();
+  if (!target) return null;
+  try {
+    const entries = fs.readdirSync(directory, { withFileTypes: true });
+    const found = entries.find((entry) => entry.isFile() && entry.name.toLowerCase() === target);
+    return found ? path.join(directory, found.name) : null;
+  } catch {
+    return null;
+  }
+}
+
+function readSubdirectories(directory) {
+  try {
+    return fs.readdirSync(directory, { withFileTypes: true })
+      .filter((entry) => entry.isDirectory())
+      .sort((a, b) => a.name.localeCompare(b.name));
+  } catch {
+    return [];
+  }
+}
+
+function launcherBasePaths() {
+  let home = process.env.USERPROFILE || process.env.HOME || '';
+  if (!home) {
+    try {
+      home = app.getPath('home');
+    } catch {
+      home = process.env.SystemDrive ? path.join(process.env.SystemDrive, 'Users') : 'C:\\Users';
+    }
+  }
+  let appData = process.env.APPDATA || '';
+  if (!appData) {
+    try {
+      appData = app.getPath('appData');
+    } catch {
+      appData = path.join(home, 'AppData', 'Roaming');
+    }
+  }
+  const localAppData = process.env.LOCALAPPDATA || path.join(home, 'AppData', 'Local');
+  return { home, appData, localAppData };
+}
+
+function dawnInstanceRoots() {
+  const { appData } = launcherBasePaths();
+  const dataFolders = [
+    path.join(appData, 'Dawn Launcher', 'dawn-data'),
+    path.join(appData, 'Dawn Launcher 3', 'dawn-data'),
+    path.join(appData, 'Dawn Launcher 3 Pro', 'dawn-data'),
+    path.join(appData, 'Dawn Launcher 3 Data', 'dawn-data'),
+    path.join(appData, 'Dawn Launcher 3 Pro Data', 'dawn-data'),
+    path.join(appData, 'Dawn Launcher'),
+    path.join(appData, 'Dawn Launcher 3 Data'),
+    path.join(appData, 'Dawn Launcher 3 Pro Data')
+  ];
+  const roots = dataFolders.map((folder) => path.join(folder, 'minecraft', 'instances'));
+
+  for (const folder of dataFolders) {
+    for (const file of ['dawn-data.json', path.join('minecraft', 'dawn-data.json')]) {
+      const data = readJsonLimited(path.join(folder, file));
+      const minecraftRoot = data?.settings?.minecraftRoot || data?.minecraftRoot;
+      if (typeof minecraftRoot !== 'string' || !path.isAbsolute(minecraftRoot)) continue;
+      roots.push(path.basename(minecraftRoot).toLowerCase() === 'instances'
+        ? minecraftRoot
+        : path.join(minecraftRoot, 'instances'));
+    }
+  }
+  return roots;
+}
+
+/* Launchers conocidos y sus carpetas habituales. Un launcher solo aparece en
+   la detección si su carpeta existe y contiene al menos una instancia. */
+function launcherDefinitions() {
+  const { home, appData, localAppData } = launcherBasePaths();
+  const definitions = [
+    {
+      id: 'curseforge',
+      name: 'CurseForge',
+      parser: 'curseforge',
+      roots: [
+        path.join(home, 'curseforge', 'minecraft', 'Instances'),
+        path.join(home, 'Documents', 'Curse', 'Minecraft', 'Instances'),
+        path.join(appData, 'CurseForge', 'minecraft', 'Instances')
+      ]
+    },
+    {
+      id: 'modrinth',
+      name: 'Modrinth',
+      parser: 'modrinth',
+      roots: [
+        path.join(appData, 'ModrinthApp', 'profiles'),
+        path.join(localAppData, 'ModrinthApp', 'profiles'),
+        path.join(appData, 'com.modrinth.theseus', 'profiles')
+      ]
+    },
+    {
+      id: 'prism',
+      name: 'Prism Launcher',
+      parser: 'prism',
+      roots: [path.join(appData, 'PrismLauncher', 'instances')]
+    },
+    {
+      id: 'multimc',
+      name: 'MultiMC',
+      parser: 'prism',
+      roots: [path.join(appData, 'MultiMC', 'instances')]
+    },
+    {
+      id: 'polymc',
+      name: 'PolyMC',
+      parser: 'prism',
+      roots: [path.join(appData, 'PolyMC', 'instances')]
+    },
+    {
+      id: 'gdlauncher',
+      name: 'GDLauncher',
+      parser: 'gdlauncher',
+      roots: [
+        path.join(appData, 'gdlauncher_carbon', 'data', 'instances'),
+        path.join(appData, 'gdlauncher_carbon', 'instances'),
+        path.join(appData, 'gdlauncher', 'instances')
+      ]
+    },
+    {
+      id: 'dawn',
+      name: 'Dawn Launcher',
+      parser: 'dawn',
+      roots: dawnInstanceRoots()
+    },
+    {
+      id: 'atlauncher',
+      name: 'ATLauncher',
+      parser: 'atlauncher',
+      roots: [path.join(appData, 'ATLauncher', 'instances')]
+    },
+    {
+      id: 'feather',
+      name: 'Feather',
+      parser: 'generic',
+      roots: [
+        path.join(appData, '.feather', 'instances'),
+        path.join(appData, '.feather', 'profiles'),
+        path.join(appData, 'Feather', 'instances'),
+        path.join(appData, 'Feather', 'profiles'),
+        path.join(appData, 'Feather Launcher', 'instances'),
+        path.join(home, '.feather', 'instances'),
+        path.join(home, '.feather', 'profiles')
+      ]
+    },
+    {
+      id: 'technic',
+      name: 'Technic',
+      parser: 'generic',
+      roots: [path.join(appData, '.technic', 'modpacks')]
+    },
+    {
+      id: 'minecraft',
+      name: 'Minecraft oficial',
+      parser: 'minecraft',
+      roots: [path.join(appData, '.minecraft')]
+    }
+  ];
+
+  const seenRoots = new Set();
+  for (const definition of definitions) {
+    definition.roots = definition.roots
+      .filter((root) => typeof root === 'string' && path.isAbsolute(root))
+      .map((root) => path.resolve(root))
+      .filter((root) => {
+        const key = root.toLowerCase();
+        if (seenRoots.has(key) || !isDirectory(root)) return false;
+        seenRoots.add(key);
+        return true;
+      });
+  }
+  return definitions;
+}
+
+/* Para la elección manual solo hacen falta el id y el nombre. */
+function launcherTypes() {
+  return [
+    { id: 'curseforge', name: 'CurseForge' },
+    { id: 'modrinth', name: 'Modrinth' },
+    { id: 'dawn', name: 'Dawn Launcher' },
+    { id: 'feather', name: 'Feather' },
+    { id: 'prism', name: 'Prism Launcher' },
+    { id: 'multimc', name: 'MultiMC' },
+    { id: 'polymc', name: 'PolyMC' },
+    { id: 'gdlauncher', name: 'GDLauncher' },
+    { id: 'atlauncher', name: 'ATLauncher' },
+    { id: 'technic', name: 'Technic' },
+    { id: 'minecraft', name: 'Minecraft oficial' }
+  ];
+}
+
+function parseLoaderToken(value) {
+  const raw = String(value ?? '').trim();
+  if (!raw) return null;
+  const lower = raw.toLowerCase();
+  if (['vanilla', 'minecraft', 'release', 'none'].includes(lower)) {
+    return { loader: 'vanilla', loaderVersion: '' };
+  }
+
+  const rules = [
+    ['neoforge', /(?:neo[-_ ]?forge|neoforged)/i],
+    ['quilt', /quilt(?:mc)?(?:[-_ ]?loader)?/i],
+    ['fabric', /fabric(?:mc)?(?:[-_ ]?loader)?/i],
+    ['forge', /forge/i]
+  ];
+  for (const [loader, regex] of rules) {
+    const match = regex.exec(raw);
+    if (!match) continue;
+    const rest = raw.slice(match.index + match[0].length);
+    const before = raw.slice(0, match.index).replace(/[-_:/ ]+$/, '');
+    const tokens = rest.split(/[-_:/ ]+/).filter((token) => safeVersionId(token));
+    const beforeVersion = /([A-Za-z0-9._+]+)$/.exec(before)?.[1] || '';
+    const ordered = loader === 'fabric' || loader === 'quilt' ? tokens : [...tokens].reverse();
+    const version = safeVersionId(ordered[0]) || safeVersionId(beforeVersion) || '';
+    return { loader, loaderVersion: loader === 'vanilla' ? '' : version };
+  }
+  return null;
+}
+
+/* Launchers con una estructura conocida: aunque la carpeta del juego esté
+   recién creada y vacía, se usa la subcarpeta correcta. */
+function pickKnownGameRoot(folder, subdirectories = ['minecraft', '.minecraft']) {
+  for (const subdirectory of subdirectories) {
+    const candidate = path.join(folder, subdirectory);
+    if (isDirectory(candidate)) return candidate;
+  }
+  return folder;
+}
+
+function parseMinecraftVersion(value) {
+  const text = String(value ?? '').trim();
+  if (!text) return '';
+  const direct = safeVersionId(text);
+  if (direct && /^\d+\.\d+(?:\.\d+)?(?:[-+].+)?$/.test(direct)) return direct;
+  const match = /(\d+\.\d+(?:\.\d+)?(?:[a-z][\w.-]*)?)/i.exec(text);
+  return safeVersionId(match?.[1]) || '';
+}
+
+function parsePrismComponents(components) {
+  let version = '';
+  let loader = 'vanilla';
+  let loaderVersion = '';
+  if (!Array.isArray(components)) return { version, loader, loaderVersion };
+
+  for (const component of components) {
+    if (!isPlainObject(component)) continue;
+    const uid = String(component.uid || '').toLowerCase();
+    const componentVersion = safeVersionId(component.version) || '';
+    if (uid === 'net.minecraft') {
+      version = componentVersion || version;
+    } else if (uid.includes('neoforge')) {
+      loader = 'neoforge';
+      loaderVersion = componentVersion;
+    } else if (uid.includes('quilt')) {
+      loader = 'quilt';
+      loaderVersion = componentVersion;
+    } else if (uid.includes('fabric')) {
+      loader = 'fabric';
+      loaderVersion = componentVersion;
+    } else if (uid.includes('forge')) {
+      loader = 'forge';
+      loaderVersion = componentVersion;
+    }
+  }
+  return { version, loader, loaderVersion };
+}
+
+function parseIni(text) {
+  const result = {};
+  for (const line of String(text || '').split(/\r?\n/)) {
+    const match = /^\s*([A-Za-z0-9_.-]+)\s*=\s*(.*)$/.exec(line);
+    if (match) result[match[1].toLowerCase()] = match[2].trim();
+  }
+  return result;
+}
+
+function guessMinecraftFromVersionFolder(name) {
+  const text = String(name || '');
+  const matches = text.match(/\d+\.\d+(?:\.\d+)?/g) || [];
+  if (!matches.length) return '';
+  const loaderFirst = /^(?:fabric|quilt|forge|neoforge|neo-forge)/i.test(text);
+  const ordered = loaderFirst ? [...matches].reverse() : matches;
+  for (const value of ordered) {
+    const major = Number.parseInt(value, 10);
+    if (major >= 1 && major < 100) return safeVersionId(value) || '';
+  }
+  return safeVersionId(matches[0]) || '';
+}
+
+async function guessVersionAndLoader(gameRoot) {
+  let version = '';
+  let loader = 'vanilla';
+  let loaderVersion = '';
+
+  let names = [];
+  try {
+    const entries = await fs.promises.readdir(path.join(gameRoot, 'versions'), { withFileTypes: true });
+    names = entries.filter((entry) => entry.isDirectory()).map((entry) => entry.name);
+  } catch {
+    names = [];
+  }
+
+  for (const name of names) {
+    const parsed = parseLoaderToken(name);
+    if (!parsed || parsed.loader === 'vanilla') continue;
+    loader = parsed.loader;
+    loaderVersion = parsed.loaderVersion;
+    version = guessMinecraftFromVersionFolder(name);
+    if (version) break;
+  }
+  if (!version) {
+    const release = names.find((name) => /^\d+\.\d+(?:\.\d+)?$/.test(name));
+    if (release) version = safeVersionId(release) || '';
+  }
+  if (!version) {
+    const first = names.find((name) => safeVersionId(name));
+    if (first) version = parseMinecraftVersion(first);
+  }
+
+  return { version, loader, loaderVersion };
+}
+
+const GAME_MARKERS = [
+  'mods', 'versions', 'config', 'defaultconfigs', 'saves', 'resourcepacks',
+  'shaderpacks', 'options.txt', 'servers.dat', 'usercache.json',
+  'launcher_profiles.json', 'crash-reports', 'libraries'
+];
+
+function hasGameContent(directory) {
+  if (!isDirectory(directory)) return false;
+  return GAME_MARKERS.some((marker) => {
+    const target = path.join(directory, marker);
+    const stat = fileStatSafe(target);
+    return Boolean(stat && (stat.isDirectory() || stat.isFile()));
+  });
+}
+
+function pickInstanceGameRoot(folder) {
+  for (const subdirectory of ['minecraft', '.minecraft', 'instance', 'game', 'gameDir']) {
+    const candidate = path.join(folder, subdirectory);
+    if (isDirectory(candidate) && hasGameContent(candidate)) return candidate;
+  }
+  return hasGameContent(folder) ? folder : null;
+}
+
+async function findLauncherIcon(folder, explicit = '') {
+  const candidates = [];
+  if (typeof explicit === 'string' && explicit.trim()) {
+    const value = explicit.trim();
+    if (/^data:image\/(?:png|jpe?g|webp);base64,/i.test(value)) return value;
+    if (!/^https?:/i.test(value)) {
+      candidates.push(path.isAbsolute(value) ? value : path.join(folder, value));
+    }
+  }
+  for (const name of ['icon.png', 'icon.jpg', 'icon.jpeg', 'icon.webp', 'profile.png']) {
+    candidates.push(path.join(folder, name));
+  }
+  for (const candidate of candidates) {
+    const stat = fileStatSafe(candidate);
+    if (!stat?.isFile() || stat.size <= 0 || stat.size > 900_000) continue;
+    try {
+      const data = fs.readFileSync(candidate);
+      const mime = data[0] === 0x89 && data[1] === 0x50 ? 'image/png'
+        : data[0] === 0xff && data[1] === 0xd8 ? 'image/jpeg'
+          : data.subarray(0, 4).toString('ascii') === 'RIFF' ? 'image/webp'
+            : '';
+      if (!mime) continue;
+      return `data:${mime};base64,${data.toString('base64')}`;
+    } catch {
+      /* se prueba el siguiente candidato */
+    }
+  }
+  return '';
+}
+
+function deepValue(object, keys, depth = 0) {
+  if (!isPlainObject(object) || depth > 3) return undefined;
+  for (const key of keys) {
+    if (object[key] !== undefined && object[key] !== null && object[key] !== '') return object[key];
+  }
+  for (const value of Object.values(object)) {
+    if (isPlainObject(value)) {
+      const found = deepValue(value, keys, depth + 1);
+      if (found !== undefined) return found;
+    }
+  }
+  return undefined;
+}
+
+async function readLauncherInstanceMetadata(folder, parser) {
+  const item = {
+    folder,
+    gameRoot: folder,
+    name: path.basename(folder),
+    version: '',
+    loader: 'vanilla',
+    loaderVersion: '',
+    description: '',
+    icon: ''
+  };
+
+  if (parser === 'curseforge') {
+    const file = findFileInsensitive(folder, 'minecraftinstance.json');
+    const meta = file ? readJsonLimited(file) : null;
+    if (!meta && !isFile(file)) return null;
+    item.gameRoot = pickInstanceGameRoot(folder) || folder;
+    item.name = sanitizeInstanceName(meta?.name) || item.name;
+    item.version = parseMinecraftVersion(meta?.gameVersion)
+      || parseMinecraftVersion(meta?.minecraftVersion)
+      || parseMinecraftVersion(meta?.baseModLoader?.minecraftVersion);
+    const loaderToken = meta?.baseModLoader?.name
+      || meta?.baseModLoader?.id
+      || meta?.modLoader
+      || '';
+    const parsed = parseLoaderToken(loaderToken);
+    if (parsed) {
+      item.loader = parsed.loader;
+      item.loaderVersion = parsed.loaderVersion;
+    }
+    const packName = meta?.installedModpack?.name;
+    if (typeof packName === 'string' && packName.trim()) item.description = `Modpack de CurseForge: ${packName.trim()}`;
+    item.icon = await findLauncherIcon(folder, meta?.icon || '');
+    return item;
+  }
+
+  if (parser === 'modrinth') {
+    const file = findFileInsensitive(folder, 'profile.json');
+    const meta = file ? readJsonLimited(file) : null;
+    if (!meta && !isFile(file)) return null;
+    item.gameRoot = pickInstanceGameRoot(folder) || folder;
+    item.name = sanitizeInstanceName(meta?.name) || item.name;
+    item.version = parseMinecraftVersion(meta?.game_version)
+      || parseMinecraftVersion(meta?.gameVersion)
+      || parseMinecraftVersion(meta?.minecraft);
+    const loader = normalizeLoader(meta?.loader);
+    item.loader = loader || 'vanilla';
+    item.loaderVersion = safeVersionId(meta?.loader_version) || safeVersionId(meta?.loaderVersion) || '';
+    if (item.loader === 'vanilla') item.loaderVersion = '';
+    item.description = typeof meta?.description === 'string' ? meta.description : '';
+    item.icon = await findLauncherIcon(folder, meta?.icon || '');
+    return item;
+  }
+
+  if (parser === 'prism') {
+    const packFile = findFileInsensitive(folder, 'mmc-pack.json');
+    const configFile = findFileInsensitive(folder, 'instance.cfg');
+    if (!packFile && !configFile) return null;
+    const pack = packFile ? readJsonLimited(packFile) : null;
+    const config = parseIni(configFile ? readTextLimited(configFile) : '');
+    item.gameRoot = pickKnownGameRoot(folder);
+    item.name = sanitizeInstanceName(config.name) || item.name;
+    const parsed = parsePrismComponents(pack?.components);
+    item.version = parsed.version;
+    item.loader = parsed.loader;
+    item.loaderVersion = parsed.loaderVersion;
+    item.description = typeof config.notes === 'string' ? config.notes : '';
+    let icon = '';
+    if (config.iconkey) {
+      const iconFolder = path.join(path.dirname(folder), 'icons');
+      icon = path.join(iconFolder, `${config.iconkey}.png`);
+    }
+    item.icon = await findLauncherIcon(folder, icon);
+    return item;
+  }
+
+  if (parser === 'gdlauncher') {
+    const file = findFileInsensitive(folder, 'instance.json');
+    const meta = file ? readJsonLimited(file) : null;
+    if (!meta) return null;
+    /* ATLauncher también usa instance.json: se distingue por modLoader. */
+    if (isPlainObject(meta.modLoader)) return null;
+    item.gameRoot = pickKnownGameRoot(folder, ['instance', 'minecraft', '.minecraft']);
+    item.name = sanitizeInstanceName(meta.name) || item.name;
+    item.version = parseMinecraftVersion(meta.version?.release)
+      || parseMinecraftVersion(meta.version?.snapshot)
+      || parseMinecraftVersion(meta.version)
+      || parseMinecraftVersion(deepValue(meta, ['minecraftVersion', 'gameVersion', 'mcVersion']));
+    const parsed = parseLoaderToken(meta.loader?.type || meta.loader?.name || meta.loader || '');
+    if (parsed) {
+      item.loader = parsed.loader;
+      item.loaderVersion = safeVersionId(meta.loader?.version) || parsed.loaderVersion;
+    }
+    item.icon = await findLauncherIcon(folder, meta.icon || '');
+    return item;
+  }
+
+  if (parser === 'dawn') {
+    const file = findFileInsensitive(folder, 'dawn-instance.json');
+    const meta = file ? readJsonLimited(file) : null;
+    if (!meta) return null;
+    const configuredRoot = typeof meta.gameDir === 'string' && path.isAbsolute(meta.gameDir)
+      ? meta.gameDir
+      : typeof meta.gameRoot === 'string' && path.isAbsolute(meta.gameRoot)
+        ? meta.gameRoot
+        : '';
+    item.gameRoot = configuredRoot && isDirectory(configuredRoot)
+      ? configuredRoot
+      : pickKnownGameRoot(folder);
+    item.name = sanitizeInstanceName(meta.name) || item.name;
+    item.version = parseMinecraftVersion(meta.gameVersion)
+      || parseMinecraftVersion(meta.minecraftVersion)
+      || parseMinecraftVersion(meta.version?.release)
+      || parseMinecraftVersion(meta.version)
+      || parseMinecraftVersion(deepValue(meta, ['gameVersion', 'minecraftVersion', 'mcVersion']));
+    const parsed = parseLoaderToken(meta.loader?.type || meta.loaderType || meta.loader || '');
+    if (parsed) {
+      item.loader = parsed.loader;
+      item.loaderVersion = safeVersionId(meta.loader?.version) || safeVersionId(meta.loaderVersion) || parsed.loaderVersion;
+    }
+    item.icon = await findLauncherIcon(folder, meta.icon || '');
+    return item;
+  }
+
+  if (parser === 'atlauncher') {
+    const file = findFileInsensitive(folder, 'instance.json');
+    const meta = file ? readJsonLimited(file) : null;
+    if (!meta) return null;
+    /* GDLauncher comparte el nombre de archivo: descarta su forma. */
+    if (isPlainObject(meta.loader) || isPlainObject(meta.version)) return null;
+    item.gameRoot = pickKnownGameRoot(folder);
+    item.name = sanitizeInstanceName(meta.name) || item.name;
+    item.version = parseMinecraftVersion(meta.version?.minecraft)
+      || parseMinecraftVersion(meta.version)
+      || parseMinecraftVersion(meta.minecraftVersion);
+    const parsed = parseLoaderToken(meta.loader || meta.modLoader || '');
+    if (parsed) {
+      item.loader = parsed.loader;
+      item.loaderVersion = parsed.loaderVersion;
+    }
+    item.icon = await findLauncherIcon(folder, meta.icon || '');
+    return item;
+  }
+
+  if (parser === 'minecraft') {
+    return null;
+  }
+
+  return null;
+}
+
+async function scanCurseForgeRoot(root) {
+  const items = [];
+  for (const entry of readSubdirectories(root)) {
+    const item = await readLauncherInstanceMetadata(path.join(root, entry.name), 'curseforge');
+    if (item) items.push(item);
+  }
+  return items;
+}
+
+async function scanModrinthRoot(root) {
+  const items = [];
+  for (const entry of readSubdirectories(root)) {
+    const item = await readLauncherInstanceMetadata(path.join(root, entry.name), 'modrinth');
+    if (item) items.push(item);
+  }
+  return items;
+}
+
+async function scanPrismRoot(root) {
+  const items = [];
+  for (const entry of readSubdirectories(root)) {
+    const item = await readLauncherInstanceMetadata(path.join(root, entry.name), 'prism');
+    if (item) items.push(item);
+  }
+  return items;
+}
+
+async function scanGdLauncherRoot(root) {
+  const items = [];
+  for (const entry of readSubdirectories(root)) {
+    const item = await readLauncherInstanceMetadata(path.join(root, entry.name), 'gdlauncher');
+    if (item) items.push(item);
+  }
+  return items;
+}
+
+async function scanDawnRoot(root) {
+  const items = [];
+  const databaseFiles = [
+    path.join(root, '..', '..', 'dawn-data.json'),
+    path.join(root, '..', 'dawn-data.json'),
+    path.join(root, 'dawn-data.json')
+  ];
+  for (const file of databaseFiles) {
+    const data = readJsonLimited(file);
+    const instances = Array.isArray(data?.instances) ? data.instances : [];
+    for (const meta of instances) {
+      if (!isPlainObject(meta)) continue;
+      const gameDir = typeof meta.gameDir === 'string' && path.isAbsolute(meta.gameDir)
+        ? path.resolve(meta.gameDir)
+        : '';
+      if (!gameDir || !isDirectory(gameDir)) continue;
+      const parsed = parseLoaderToken(meta.loader || '');
+      items.push({
+        folder: path.dirname(gameDir),
+        gameRoot: gameDir,
+        name: sanitizeInstanceName(meta.name) || path.basename(gameDir),
+        version: parseMinecraftVersion(meta.gameVersion) || parseMinecraftVersion(meta.launchVersionId),
+        loader: parsed?.loader || 'vanilla',
+        loaderVersion: safeVersionId(meta.loaderVersion) || parsed?.loaderVersion || '',
+        description: '',
+        icon: await findLauncherIcon(gameDir, meta.icon || '')
+      });
+    }
+    if (items.length) break;
+  }
+
+  for (const entry of readSubdirectories(root)) {
+    const item = await readLauncherInstanceMetadata(path.join(root, entry.name), 'dawn');
+    if (item) items.push(item);
+  }
+  return items;
+}
+
+async function scanAtLauncherRoot(root) {
+  const items = [];
+  for (const entry of readSubdirectories(root)) {
+    const item = await readLauncherInstanceMetadata(path.join(root, entry.name), 'atlauncher');
+    if (item) items.push(item);
+  }
+  return items;
+}
+
+async function scanMinecraftRoot(root) {
+  const file = findFileInsensitive(root, 'launcher_profiles.json');
+  if (!file) return [];
+  const data = readJsonLimited(file);
+  const profiles = isPlainObject(data?.profiles) ? data.profiles : {};
+  const items = [];
+  for (const [key, profile] of Object.entries(profiles)) {
+    if (!isPlainObject(profile)) continue;
+    const gameDir = typeof profile.gameDir === 'string' ? profile.gameDir.trim() : '';
+    if (!gameDir || !path.isAbsolute(gameDir) || !isDirectory(gameDir)) continue;
+    if (path.resolve(gameDir).toLowerCase() === path.resolve(root).toLowerCase()) continue;
+
+    const parsedVersion = safeVersionId(profile.lastVersionId) || '';
+    const loader = parseLoaderToken(parsedVersion);
+    const item = {
+      folder: gameDir,
+      gameRoot: gameDir,
+      name: sanitizeInstanceName(profile.name) || key,
+      version: loader ? guessMinecraftFromVersionFolder(parsedVersion) : parseMinecraftVersion(parsedVersion),
+      loader: loader?.loader || 'vanilla',
+      loaderVersion: loader?.loaderVersion || '',
+      description: typeof profile.description === 'string' ? profile.description : '',
+      icon: typeof profile.icon === 'string' && profile.icon.startsWith('data:image/') ? profile.icon : ''
+    };
+    items.push(item);
+  }
+  return items;
+}
+
+const LAUNCHER_PARSERS = {
+  curseforge: scanCurseForgeRoot,
+  modrinth: scanModrinthRoot,
+  prism: scanPrismRoot,
+  gdlauncher: scanGdLauncherRoot,
+  dawn: scanDawnRoot,
+  atlauncher: scanAtLauncherRoot,
+  minecraft: scanMinecraftRoot
+};
+
+async function scanGenericRoot(root) {
+  const items = [];
+  if (hasGameContent(root)) {
+    const guessed = await guessVersionAndLoader(root);
+    items.push({
+      folder: root,
+      gameRoot: root,
+      name: path.basename(root) || 'Instancia',
+      version: guessed.version,
+      loader: guessed.loader,
+      loaderVersion: guessed.loaderVersion,
+      description: '',
+      icon: await findLauncherIcon(root, '')
+    });
+    return items;
+  }
+
+  const ignored = new Set([
+    'cache', 'assets', 'libraries', 'runtime', 'logs', 'downloads', 'java',
+    'natives', 'crash-reports', 'resourcepacks', 'shaderpacks', 'saves',
+    'versions', 'mods', 'config', 'instance', 'minecraft', '.minecraft',
+    'node_modules', '.git', 'icons'
+  ]);
+
+  for (const entry of readSubdirectories(root)) {
+    if (ignored.has(entry.name.toLowerCase())) continue;
+    const folder = path.join(root, entry.name);
+    const gameRoot = pickInstanceGameRoot(folder);
+    if (!gameRoot) continue;
+    const guessed = await guessVersionAndLoader(gameRoot);
+    items.push({
+      folder,
+      gameRoot,
+      name: entry.name,
+      version: guessed.version,
+      loader: guessed.loader,
+      loaderVersion: guessed.loaderVersion,
+      description: '',
+      icon: await findLauncherIcon(folder, '')
+    });
+  }
+  return items;
+}
+
+function mergeScannedItems(target, source) {
+  const seen = new Set(target.map((item) => path.resolve(item.gameRoot).toLowerCase()));
+  for (const item of source) {
+    if (!item?.gameRoot) continue;
+    const key = path.resolve(item.gameRoot).toLowerCase();
+    if (seen.has(key)) continue;
+    seen.add(key);
+    target.push(item);
+  }
+  return target;
+}
+
+async function runLauncherParser(parser, root) {
+  const scan = LAUNCHER_PARSERS[parser];
+  if (!scan) return [];
+  try {
+    return await scan(root);
+  } catch (error) {
+    console.warn(`[launchers] No se pudo leer ${root}:`, humanError(error));
+    return [];
+  }
+}
+
+async function scanLauncherRootById(launcherId, root) {
+  if (typeof root !== 'string' || !path.isAbsolute(root)) throw new Error('La carpeta elegida no es válida.');
+  const resolvedRoot = path.resolve(root);
+  if (!isDirectory(resolvedRoot)) throw new Error('La carpeta elegida no existe.');
+
+  const definitions = launcherDefinitions();
+  const definition = definitions.find((item) => item.id === launcherId);
+  let items = [];
+  let matchedParser = '';
+  if (definition) {
+    /* La carpeta elegida puede ser la raíz de instancias o una instancia
+       concreta; primero se prueba a leerla como instancia. */
+    if (definition.parser !== 'minecraft') {
+      const direct = await readLauncherInstanceMetadata(resolvedRoot, definition.parser);
+      if (direct) items.push(direct);
+    }
+    if (!items.length) items = await runLauncherParser(definition.parser, resolvedRoot);
+    if (!items.length) items = await scanGenericRoot(resolvedRoot);
+    matchedParser = definition.parser;
+  } else if (launcherId === 'auto' || !launcherId) {
+    const order = ['curseforge', 'modrinth', 'prism', 'dawn', 'atlauncher', 'gdlauncher', 'minecraft'];
+    for (const parser of order) {
+      const direct = await readLauncherInstanceMetadata(resolvedRoot, parser);
+      if (direct) {
+        mergeScannedItems(items, [direct]);
+        matchedParser = parser;
+        break;
+      }
+    }
+    if (!items.length) {
+      for (const parser of order) {
+        const found = await runLauncherParser(parser, resolvedRoot);
+        if (found.length) {
+          mergeScannedItems(items, found);
+          if (!matchedParser) matchedParser = parser;
+        }
+      }
+    }
+    if (!items.length) items = await scanGenericRoot(resolvedRoot);
+  } else {
+    items = await scanGenericRoot(resolvedRoot);
+  }
+
+  const matched = definitions.find((item) => item.roots.some((root) => root.toLowerCase() === resolvedRoot.toLowerCase()))
+    || definitions.find((item) => item.parser === matchedParser);
+  return {
+    launcher: {
+      id: definition?.id || matched?.id || 'auto',
+      name: definition?.name || matched?.name || 'Otro launcher'
+    },
+    root: resolvedRoot,
+    instances: items
+  };
+}
+
+async function countDirectoryEntries(directory, predicate) {
+  try {
+    const entries = await fs.promises.readdir(directory, { withFileTypes: true });
+    return entries.filter(predicate).length;
+  } catch {
+    return 0;
+  }
+}
+
+/* Completa lo que necesita la interfaz: si la carpeta ya está registrada,
+   cuántos mods y mundos tiene y una clave estable para seleccionarla. */
+async function presentScannedInstance(item) {
+  const gameRoot = path.resolve(item.gameRoot);
+  const existing = (settings.instances || []).find(
+    (instance) => path.resolve(instance.gameRoot).toLowerCase() === gameRoot.toLowerCase()
+  );
+  const guessed = (!item.version || !item.loader || item.loader === 'vanilla')
+    ? await guessVersionAndLoader(gameRoot)
+    : null;
+  const version = safeVersionId(item.version) || guessed?.version || '';
+  const loader = normalizeLoader(item.loader) || guessed?.loader || 'vanilla';
+  const loaderVersion = safeVersionId(item.loaderVersion) || guessed?.loaderVersion || '';
+
+  return {
+    key: gameRoot.toLowerCase(),
+    name: sanitizeInstanceName(item.name) || path.basename(gameRoot) || 'Instancia',
+    gameRoot,
+    version,
+    loader,
+    loaderVersion: loader === 'vanilla' ? '' : loaderVersion,
+    description: sanitizeInstanceDescription(item.description),
+    mods: await countDirectoryEntries(path.join(gameRoot, 'mods'), (entry) => entry.isFile() && /\.jar(?:\.disabled)?$/i.test(entry.name)),
+    worlds: await countDirectoryEntries(path.join(gameRoot, 'saves'), (entry) => entry.isDirectory()),
+    added: Boolean(existing),
+    addedName: existing?.name || ''
+  };
+}
+
+async function presentScannedInstances(items) {
+  const unique = [];
+  mergeScannedItems(unique, items);
+  const presented = [];
+  for (const item of unique.slice(0, MAX_LAUNCHER_IMPORT)) {
+    presented.push(await presentScannedInstance(item));
+  }
+  return presented;
+}
+
+async function detectLaunchers() {
+  const detected = [];
+  const seen = new Set();
+  for (const definition of launcherDefinitions()) {
+    for (const root of definition.roots) {
+      const key = root.toLowerCase();
+      if (seen.has(key)) continue;
+      seen.add(key);
+      let scanned = await presentScannedInstances(await runLauncherParser(definition.parser, root));
+      if (!scanned.length && definition.parser !== 'minecraft') {
+        /* Launchers sin metadatos conocidos siguen siendo detectables si sus
+           carpetas parecen directorios de juego. */
+        scanned = await presentScannedInstances(await scanGenericRoot(root));
+      }
+      if (!scanned.length) continue;
+      detected.push({
+        id: definition.id,
+        name: definition.name,
+        root,
+        instanceCount: scanned.length,
+        available: scanned.filter((item) => !item.added).length
+      });
+    }
+  }
+  return { launchers: detected, types: launcherTypes() };
+}
+
+async function scanLauncherInstances(payload = {}) {
+  const data = isPlainObject(payload) ? payload : {};
+  if (typeof data.root !== 'string' || !data.root.trim()) throw new Error('Elige la carpeta del launcher.');
+  const launcherId = typeof data.launcherId === 'string' ? data.launcherId : 'auto';
+  const result = await scanLauncherRootById(launcherId, data.root);
+  return {
+    canceled: false,
+    launcher: result.launcher,
+    root: result.root,
+    instances: await presentScannedInstances(result.instances)
+  };
+}
+
+function isForbiddenImportRoot(root) {
+  const resolved = path.resolve(root).toLowerCase();
+  const { home, appData } = launcherBasePaths();
+  const forbidden = [
+    path.parse(resolved).root,
+    path.resolve(DATA_DIR),
+    path.resolve(INSTANCES_DIR),
+    home,
+    appData
+  ].map((value) => path.resolve(value).toLowerCase());
+  return resolved.length < 4 || forbidden.includes(resolved);
+}
+
+async function importLauncherInstances(payload = {}) {
+  const data = isPlainObject(payload) ? payload : {};
+  if (typeof data.root !== 'string' || !data.root.trim()) throw new Error('Elige la carpeta del launcher.');
+  const launcherId = typeof data.launcherId === 'string' ? data.launcherId : 'auto';
+  const requested = Array.isArray(data.gameRoots)
+    ? new Set(data.gameRoots.filter((value) => typeof value === 'string').map((value) => path.resolve(value).toLowerCase()))
+    : new Set();
+  if (!requested.size) throw new Error('Selecciona al menos una instancia para importar.');
+
+  const scan = await scanLauncherRootById(launcherId, data.root);
+  const selected = scan.instances.filter((item) => requested.has(path.resolve(item.gameRoot).toLowerCase()));
+  if (!selected.length) throw new Error('No se encontraron las instancias seleccionadas. Vuelve a escanear la carpeta.');
+
+  const imported = [];
+  const skipped = [];
+  for (const item of selected.slice(0, MAX_LAUNCHER_IMPORT)) {
+    const gameRoot = path.resolve(item.gameRoot);
+    if (!isDirectory(gameRoot) || isForbiddenImportRoot(gameRoot)) {
+      skipped.push({ name: item.name, reason: 'La carpeta no es válida.' });
+      continue;
+    }
+    const existing = (settings.instances || []).find(
+      (instance) => path.resolve(instance.gameRoot).toLowerCase() === gameRoot.toLowerCase()
+    );
+    if (existing) {
+      skipped.push({ name: item.name, reason: `Ya está importada como «${existing.name}».` });
+      continue;
+    }
+
+    emitInstanceProgress(null, 'import', `Registrando «${item.name}»…`, 15 + Math.round((imported.length / selected.length) * 70));
+    const cover = await findLauncherIcon(item.folder || gameRoot, item.icon || '');
+    const instance = registerInstance({
+      name: item.name,
+      root: gameRoot,
+      version: item.version,
+      loader: item.loader,
+      loaderVersion: item.loaderVersion,
+      description: item.description,
+      cover,
+      source: scan.launcher.id,
+      activate: false,
+      prepare: false
+    });
+    imported.push(instance);
+  }
+
+  if (!imported.length) {
+    throw new Error(skipped[0]?.reason || 'No se pudo importar ninguna instancia.');
+  }
+
+  /* La instancia activa no cambia: importar varias no debe alterar la partida
+     actual. Solo se refresca gameRoot por si acaso. */
+  const active = activeInstance();
+  if (active) settings.gameRoot = active.gameRoot;
+  saveSettings();
+  ensureGameDirectories();
+  emitInstanceProgress(null, 'done', 'Instancias importadas.', 100);
+
+  const state = await instanceState();
+  return {
+    canceled: false,
+    launcher: scan.launcher,
+    imported: imported.map((instance) => ({ id: instance.id, name: instance.name })),
+    skipped,
+    ...state
+  };
 }
 
 function zipEntries(zip) {
@@ -4539,7 +7721,7 @@ function exportInstanceToZip(instance, destination, options = {}) {
       description: instance.description || '',
       includeWorlds: Boolean(options.includeWorlds),
       createdAt: new Date().toISOString(),
-      exportedBy: 'NexyLauncher 1.0'
+      exportedBy: 'NexyLauncher 1.1'
     };
     zip.addFile('nexy-pack.json', Buffer.from(JSON.stringify(manifest, null, 2), 'utf8'));
   }
@@ -4834,7 +8016,7 @@ function writeLaunchLog() {
     const directory = gamePaths().logs;
     ensureDir(directory);
     const header = [
-      'NexyLauncher 1.0 — registro de lanzamiento',
+      'NexyLauncher 1.1 — registro de lanzamiento',
       `Fecha: ${new Date().toISOString()}`,
       `Versión: ${currentLaunch.version}`,
       `Jugador: ${currentLaunch.accountName || '—'}`,
@@ -4906,8 +8088,20 @@ async function performLaunch({ version, type, account, server }) {
       }
     }
 
+    let authorization;
+    if (account.type === 'msa') {
+      const session = msaSession && msaSession.accountId === account.id ? await msaEnsureFresh() : null;
+      if (!session) {
+        throw new Error('Inicia sesión con Microsoft para jugar con esta cuenta. La sesión no se guarda al cerrar el launcher.');
+      }
+      authorization = msaAuthorization(session);
+      pushLog('info', `Cuenta Microsoft: ${session.profile.name} (${session.profile.id}).`);
+    } else {
+      authorization = offlineAuthorization(account.name);
+    }
+
     const launchOptions = {
-      authorization: offlineAuthorization(account.name),
+      authorization,
       root: gameRoot,
       version: { number: version, type },
       memory: { max: `${launchSettings.memory.max}G`, min: `${launchSettings.memory.min}G` },
@@ -4940,6 +8134,19 @@ async function performLaunch({ version, type, account, server }) {
     }
 
     emitStatus('preparing', 'Preparando Minecraft…');
+
+    if (settings.autoBackupWorlds !== false) {
+      try {
+        const backup = await autoBackupBeforeLaunch();
+        if (backup.created) {
+          pushLog('info', `Copia de seguridad automática: ${backup.created} mundo(s) copiados.`);
+        } else {
+          pushLog('debug', 'Los mundos no han cambiado desde la última copia de seguridad.');
+        }
+      } catch (error) {
+        pushLog('warn', `No se pudieron copiar los mundos: ${humanError(error)}`);
+      }
+    }
 
     activeLauncher = new Client();
     let lastDownloadEmit = { name: '', at: 0, percent: -1 };
@@ -5021,6 +8228,13 @@ async function performLaunch({ version, type, account, server }) {
         emitStatus('closed', code === 0 ? 'Minecraft se cerró correctamente.' : `Minecraft se cerró (código ${code}).`, { code });
       }
       writeLaunchLog();
+      if (currentLaunch?.sessionId) {
+        finishSession(currentLaunch.sessionId, {
+          exitCode: Number.isFinite(Number(code)) ? Number(code) : null,
+          crashed: failed,
+          stopped
+        });
+      }
       if (!stopped && currentLaunch?.started && code !== 0) {
         captureCrash(code, currentLaunch?.instanceId).catch((error) => console.error('No se pudo preparar el crash para el asistente:', error));
       }
@@ -5051,6 +8265,12 @@ async function performLaunch({ version, type, account, server }) {
           emitStatus('error', currentLaunch?.failure || 'No se pudo iniciar Minecraft. Comprueba Java y los archivos de la versión en la consola.', { code: 'launch' });
         }
         writeLaunchLog();
+      }
+      if (currentLaunch?.sessionId) {
+        finishSession(currentLaunch.sessionId, {
+          crashed: !currentLaunch?.stopRequested,
+          stopped: Boolean(currentLaunch?.stopRequested)
+        });
       }
       activeLauncher = null;
       activeProcess = null;
@@ -5129,6 +8349,14 @@ function startLaunch({ version, server, account, loader, loaderVersion }) {
     installing: false,
     phase: 'checking',
     stopRequested: false,
+    sessionId: startSession({
+      instanceId: activeInstance()?.id || null,
+      instanceName: activeInstance()?.name || 'Principal',
+      version: safeVersion,
+      loader: requestedLoader,
+      loaderVersion: safeLoaderVersion,
+      accountName: account.name
+    }),
     controller
   };
 
@@ -5224,6 +8452,9 @@ function startLaunch({ version, server, account, loader, loaderVersion }) {
     if (currentLaunch?.stopRequested || controller.signal.aborted || error.name === 'AbortError') {
       pushLog('info', 'Inicio de Minecraft cancelado.');
       emitStatus('closed', 'Inicio de Minecraft cancelado.', { code: 'cancelled' });
+      if (currentLaunch?.sessionId) {
+        finishSession(currentLaunch.sessionId, { stopped: true });
+      }
       if (currentLaunch) {
         currentLaunch.running = false;
         currentLaunch.installing = false;
@@ -5237,6 +8468,7 @@ function startLaunch({ version, server, account, loader, loaderVersion }) {
       sendToRenderer('launch:event', { type: 'java-required', ...details, message });
       emitStatus('error', message, { code: 'java' });
       writeLaunchLog();
+      if (currentLaunch?.sessionId) finishSession(currentLaunch.sessionId, { crashed: true });
       if (currentLaunch) {
         currentLaunch.running = false;
         currentLaunch.installing = false;
@@ -5246,6 +8478,7 @@ function startLaunch({ version, server, account, loader, loaderVersion }) {
     pushLog('error', message);
     emitStatus('error', message, { code: 'launch' });
     writeLaunchLog();
+    if (currentLaunch?.sessionId) finishSession(currentLaunch.sessionId, { crashed: true });
     if (currentLaunch) {
       currentLaunch.running = false;
       currentLaunch.installing = false;
@@ -5639,7 +8872,7 @@ async function buildLauncherContext() {
 
   const context = {
     launcher: {
-      nombre: 'NexyLauncher 1.0',
+      nombre: 'NexyLauncher 1.1',
       version: app.getVersion(),
       sistema: process.platform,
       electron: process.versions.electron
@@ -5706,7 +8939,7 @@ async function buildLauncherContext() {
 
 function buildAiSystemPrompt(contextJson, crash) {
   const lines = [
-    'Eres el asistente integrado de NexyLauncher 1.0, un launcher de Minecraft Java Edition para cuentas offline.',
+    'Eres el asistente integrado de NexyLauncher 1.1, un launcher de Minecraft Java Edition para cuentas offline.',
     'Ayudas a resolver dudas sobre el launcher, versiones, cargadores (Vanilla, Fabric, Forge, NeoForge, Quilt), mods, Java, memoria, servidores y crashes.',
     'Responde siempre en español, de forma clara, directa y sin inventar datos. Si falta información, pídela.',
     '',
@@ -5715,8 +8948,8 @@ function buildAiSystemPrompt(contextJson, crash) {
     'Si no propones cambios, usa "actions": [].',
     '',
     'Acciones permitidas (solo si estás razonablemente seguro y el archivo existe en el contexto):',
-    '- disable_mod: {"type":"disable_mod","file":"mod.jar"} (renombra a .disabled)',
-    '- enable_mod: {"type":"enable_mod","file":"mod.jar.disabled"}',
+    '- disable_mod: {"type":"disable_mod","file":"mod.jar"} (lo mueve a mods/.desactivados/)',
+    '- enable_mod: {"type":"enable_mod","file":"mod.jar"} (lo devuelve a mods/)',
     '- remove_mod: {"type":"remove_mod","file":"mod.jar"} (borra el archivo; úsalo solo como último recurso)',
     '- set_memory: {"type":"set_memory","min":2,"max":6} en GB',
     '- set_jvm_args: {"type":"set_jvm_args","value":"-XX:+UseG1GC"}',
@@ -5986,11 +9219,8 @@ async function applyAiAction(action) {
       return `Mod ${path.basename(String(action.file))} activado${changed ? '' : ' (ya estaba activo)'}.`;
     }
     case 'remove_mod': {
-      const base = path.basename(String(action.file || ''));
-      if (!base || !/\.jar(\.disabled)?$/i.test(base)) throw new Error('Archivo de mod no válido.');
-      const target = path.join(gamePaths().mods, base);
-      if (!fs.existsSync(target)) throw new Error(`El mod ${base} ya no existe.`);
-      await fs.promises.unlink(target);
+      const base = path.basename(String(action.file || '')).replace(/\.disabled$/i, '');
+      if (!removeModFiles(base)) throw new Error(`El mod ${base} ya no existe.`);
       forgetInstalledMod(base);
       return `Mod ${base} eliminado.`;
     }
@@ -6249,14 +9479,17 @@ function registerIpc() {
 
     return {
       settings: publicSettings(),
-      accounts,
-      activeAccount: account,
+      accounts: accountsPublic(),
+      activeAccount: publicAccount(account),
       servers,
+      localServers: publicLocalServers(),
       localVersions,
       mods,
       instances: await listInstances(),
+      sessions: publicSessions(),
       activeInstanceId: settings.activeInstanceId,
       java: javaCache || [],
+      msa: msaPublic(),
       system: {
         totalMemory: totalMemoryGB(),
         freeMemory: Math.round(os.freemem() / 1024 ** 3),
@@ -6285,6 +9518,8 @@ function registerIpc() {
     if ('gameArgs' in patch) settings.gameArgs = String(patch.gameArgs || '').slice(0, 4000);
     if ('minimizeOnLaunch' in patch) settings.minimizeOnLaunch = patch.minimizeOnLaunch !== false;
     if ('autoLogin' in patch) settings.autoLogin = patch.autoLogin !== false;
+    if ('autoBackupWorlds' in patch) settings.autoBackupWorlds = patch.autoBackupWorlds !== false;
+    if ('backupKeep' in patch) settings.backupKeep = Math.round(clamp(Number(patch.backupKeep) || 6, 1, 50));
     if ('showSnapshots' in patch) settings.showSnapshots = patch.showSnapshots === true;
     if ('dismissedUpdateVersion' in patch) {
       const dismissed = String(patch.dismissedUpdateVersion || '').trim().slice(0, 32);
@@ -6437,6 +9672,7 @@ function registerIpc() {
       loaderVersion: safeVersionId(payload.loaderVersion) || '',
       description: sanitizeInstanceDescription(payload.description),
       cover: sanitizeInstanceCover(payload.cover),
+      iconAuto: !sanitizeInstanceCover(payload.cover),
       settings: normalizeInstanceSettings(payload.settings)
     };
     if (instance.loader === 'vanilla') instance.loaderVersion = '';
@@ -6463,6 +9699,7 @@ function registerIpc() {
         throw new Error('Ya existe una instancia con ese nombre.');
       }
       instance.name = name;
+      moveInstanceFolder(instance, name);
     }
     if ('version' in data) instance.version = safeVersionId(data.version) || '';
     if ('loader' in data) {
@@ -6473,7 +9710,10 @@ function registerIpc() {
     }
     if ('loaderVersion' in data) instance.loaderVersion = safeVersionId(data.loaderVersion) || '';
     if ('description' in data) instance.description = sanitizeInstanceDescription(data.description);
-    if ('cover' in data) instance.cover = sanitizeInstanceCover(data.cover);
+    if ('cover' in data) {
+      instance.cover = sanitizeInstanceCover(data.cover);
+      instance.iconAuto = false;
+    }
     if ('settings' in data) instance.settings = normalizeInstanceSettings(data.settings);
     if (instance.loader === 'vanilla') instance.loaderVersion = '';
 
@@ -6504,6 +9744,8 @@ function registerIpc() {
       throw new Error('Ya existe una instancia con ese nombre.');
     }
     instance.name = name;
+    moveInstanceFolder(instance, name);
+    if (instance.id === settings.activeInstanceId) settings.gameRoot = instance.gameRoot;
     writeInstanceMarker(instance);
     saveSettings();
     return instanceState();
@@ -6553,6 +9795,7 @@ function registerIpc() {
       loaderVersion: source.loaderVersion || '',
       description: source.description || '',
       cover: source.cover || '',
+      iconAuto: !source.cover,
       settings: normalizeInstanceSettings(source.settings)
     };
     settings.instances.push(instance);
@@ -6570,6 +9813,9 @@ function registerIpc() {
     const instance = settings.instances[index];
     if (data.deleteFiles === true) {
       const root = path.resolve(instance.gameRoot);
+      if (!instanceFolderManaged(instance)) {
+        throw new Error('Esta instancia se importó de otro launcher y vive en su carpeta original. Quita la instancia de NexyLauncher sin borrar archivos.');
+      }
       const marker = readJson(instanceMarkerPath(root), null);
       if (!marker || marker.id !== instance.id) {
         throw new Error('Esta carpeta no fue creada por el launcher. Si quieres borrar sus archivos, hazlo manualmente.');
@@ -6609,6 +9855,23 @@ function registerIpc() {
     if (result.canceled || !result.filePaths[0]) return { canceled: true };
     return { canceled: false, directory: result.filePaths[0] };
   });
+
+  handle('launchers:detect', async () => detectLaunchers());
+
+  handle('launchers:scan', async (payload) => scanLauncherInstances(payload));
+
+  handle('launchers:pickRoot', async () => {
+    const result = await dialog.showOpenDialog(mainWindow, {
+      title: 'Elegir la carpeta raíz del launcher',
+      buttonLabel: 'Escanear esta carpeta',
+      defaultPath: launcherBasePaths().home,
+      properties: ['openDirectory']
+    });
+    if (result.canceled || !result.filePaths[0]) return { canceled: true };
+    return { canceled: false, root: path.resolve(result.filePaths[0]) };
+  });
+
+  handle('launchers:import', async (payload) => importLauncherInstances(payload));
 
   handle('instances:import', async (payload = {}) => {
     let packPath = isPlainObject(payload) && typeof payload.path === 'string' ? payload.path : '';
@@ -6784,7 +10047,7 @@ function registerIpc() {
     const clean = sanitizeUsername(name);
     if (!clean) throw new Error('El nombre debe tener entre 3 y 16 caracteres y solo puede usar letras, números o guion bajo.');
 
-    let account = accounts.find((item) => item.name.toLowerCase() === clean.toLowerCase());
+    let account = accounts.find((item) => item.type === 'offline' && item.name.toLowerCase() === clean.toLowerCase());
     if (!account) {
       account = {
         id: crypto.randomUUID(),
@@ -6802,7 +10065,7 @@ function registerIpc() {
     settings.seenWelcome = true;
     writeJson(FILES.accounts, accounts);
     saveSettings();
-    return { accounts, activeAccount: activeAccount() };
+    return { accounts: accountsPublic(), activeAccount: publicAccount(activeAccount()) };
   });
 
   handle('accounts:activate', async (id) => {
@@ -6813,25 +10076,92 @@ function registerIpc() {
     settings.seenWelcome = true;
     writeJson(FILES.accounts, accounts);
     saveSettings();
-    return { accounts, activeAccount: account };
+    return { accounts: accountsPublic(), activeAccount: publicAccount(account) };
   });
 
   handle('accounts:remove', async (id) => {
     const index = accounts.findIndex((item) => item.id === id);
     if (index === -1) throw new Error('Ese perfil ya no existe.');
-    accounts.splice(index, 1);
+    const [removed] = accounts.splice(index, 1);
+    if (removed?.type === 'msa' && msaSession?.accountId === id) {
+      msaSession = null;
+      msaClearRefreshTimer();
+    }
+    if (removed) deleteSkinFile(removed.id);
     if (settings.activeAccountId === id) {
       settings.activeAccountId = accounts[0]?.id || null;
     }
     writeJson(FILES.accounts, accounts);
     saveSettings();
-    return { accounts, activeAccount: activeAccount() };
+    return { accounts: accountsPublic(), activeAccount: publicAccount(activeAccount()) };
   });
 
   handle('accounts:logout', async () => {
     settings.activeAccountId = null;
     saveSettings();
-    return { accounts, activeAccount: null };
+    return { accounts: accountsPublic(), activeAccount: null };
+  });
+
+  handle('accounts:signOutMicrosoft', async (id) => {
+    msaSignOut(id || null);
+    return { accounts: accountsPublic(), activeAccount: publicAccount(activeAccount()), msa: msaPublic() };
+  });
+
+  handle('accounts:skin', async (id) => {
+    const account = accounts.find((item) => item.id === id);
+    if (!account) throw new Error('Ese perfil ya no existe.');
+    return { skin: skinInfo(account) };
+  });
+
+  handle('accounts:pickSkin', async (id) => {
+    const account = accounts.find((item) => item.id === id);
+    if (!account) throw new Error('Ese perfil ya no existe.');
+    const result = await dialog.showOpenDialog(mainWindow, {
+      title: `Elegir skin de ${account.name}`,
+      properties: ['openFile'],
+      filters: [{ name: 'Skin de Minecraft (PNG)', extensions: ['png'] }]
+    });
+    if (result.canceled || !result.filePaths[0]) return { canceled: true };
+
+    const file = result.filePaths[0];
+    const stat = await fs.promises.stat(file).catch(() => null);
+    if (!stat || !stat.isFile()) throw new Error('No se pudo leer la skin.');
+    if (stat.size > 2 * 1024 * 1024) throw new Error('La skin es demasiado grande (máximo 2 MB).');
+
+    const png = normalizeSkin(await fs.promises.readFile(file));
+    writeSkinFile(account, png, 'custom');
+    msaBroadcast();
+    return {
+      canceled: false,
+      accounts: accountsPublic(),
+      activeAccount: publicAccount(activeAccount()),
+      skin: skinInfo(account)
+    };
+  });
+
+  handle('accounts:resetSkin', async (id) => {
+    const account = accounts.find((item) => item.id === id);
+    if (!account) throw new Error('Ese perfil ya no existe.');
+
+    if (account.type === 'msa') {
+      const info = await msaSyncOfficialSkin(account, { force: true });
+      if (!info) {
+        throw new Error('No se pudo descargar la skin de Microsoft. Revisa tu conexión e inténtalo de nuevo.');
+      }
+      return {
+        accounts: accountsPublic(),
+        activeAccount: publicAccount(activeAccount()),
+        skin: info
+      };
+    }
+
+    removeSkinFile(account);
+    msaBroadcast();
+    return {
+      accounts: accountsPublic(),
+      activeAccount: publicAccount(activeAccount()),
+      skin: skinInfo(account)
+    };
   });
 
   handle('servers:save', async (server) => {
@@ -6861,6 +10191,33 @@ function registerIpc() {
   });
 
   handle('servers:ping', async (address) => pingMinecraftServer(address));
+
+  handle('localservers:list', async () => ({ servers: publicLocalServers() }));
+
+  handle('localservers:suggestPort', async () => ({ port: await suggestLocalServerPort() }));
+
+  handle('localservers:create', async (payload) => createLocalServer(payload));
+
+  handle('localservers:start', async (id) => startLocalServer(id));
+
+  handle('localservers:stop', async (id) => ({ servers: await stopLocalServer(id) }));
+
+  handle('localservers:command', async (payload = {}) => sendLocalServerCommand(payload?.id, payload?.command));
+
+  handle('localservers:logs', async (id) => localServerLogs(id));
+
+  handle('localservers:remove', async (id) => ({ servers: await removeLocalServer(id) }));
+
+  handle('localservers:openFolder', async (payload = {}) => {
+    const server = findLocalServer(payload?.id);
+    const directory = localServerDirectory(server);
+    if (!fs.existsSync(directory)) throw new Error('La carpeta del servidor ya no existe.');
+    const target = payload?.key === 'logs' ? path.join(directory, 'logs') : directory;
+    ensureDir(target);
+    const error = await shell.openPath(target);
+    if (error) throw new Error(error);
+    return { ok: true, path: target };
+  });
 
   handle('versions:local', async () => listLocalVersions());
 
@@ -6934,16 +10291,9 @@ function registerIpc() {
   handle('mods:addBuffer', async ({ name, data } = {}) => addModBuffer(name, data));
 
   handle('mods:toggle', async (file) => {
-    const directory = gamePaths().mods;
-    const base = path.basename(String(file || ''));
-    if (!base) throw new Error('Archivo inválido.');
-    const source = path.join(directory, base);
-    if (!fs.existsSync(source)) throw new Error('Ese mod ya no existe.');
-
-    const enabled = !/\.disabled$/i.test(base);
-    const target = enabled ? `${source}.disabled` : source.replace(/\.disabled$/i, '');
-    if (fs.existsSync(target)) throw new Error('Ya existe un archivo con ese nombre.');
-    await fs.promises.rename(source, target);
+    const location = modLocation(file);
+    if (!location) throw new Error('Ese mod ya no existe.');
+    await setModEnabled(location.name, Boolean(location.inactive));
     return listMods();
   });
 
@@ -6954,12 +10304,8 @@ function registerIpc() {
   handle('mods:update', async (payload = {}) => updateMods(payload));
 
   handle('mods:delete', async (file) => {
-    const directory = gamePaths().mods;
-    const base = path.basename(String(file || ''));
-    if (!base) throw new Error('Archivo inválido.');
-    const target = path.join(directory, base);
-    if (!fs.existsSync(target)) throw new Error('Ese mod ya no existe.');
-    await fs.promises.unlink(target);
+    const base = path.basename(String(file || '')).replace(/\.disabled$/i, '');
+    if (!removeModFiles(base)) throw new Error('Ese mod ya no existe.');
     forgetInstalledMod(base);
     return listMods();
   });
@@ -7084,7 +10430,35 @@ function registerIpc() {
     return { canceled: false, java, settings: publicSettings() };
   });
 
+  handle('java:auto', async (payload) => {
+    const major = Number(isPlainObject(payload) ? payload.major : payload);
+    if (!Number.isInteger(major) || major < 8 || major > 99) throw new Error('Versión de Java no válida.');
+
+    let detected = javaCache || [];
+    if (!detected.length) detected = await detectJavaCandidates();
+    const existing = pickCompatibleJava(major, detected);
+    if (existing) {
+      settings.javaPaths[String(major)] = existing.path;
+      saveSettings();
+      broadcastJava();
+      return { canceled: false, installed: false, java: existing, settings: publicSettings() };
+    }
+
+    const result = await ensureJavaInstalled(major);
+    return { canceled: false, installed: result.installed, java: result.java, settings: publicSettings() };
+  });
+
   handle('java:detect', async (force = false) => detectJavaCandidates(force === true));
+
+  handle('sessions:list', async () => ({ sessions: publicSessions() }));
+
+  handle('sessions:clear', async () => {
+    sessions = [];
+    saveSessions();
+    return { sessions: [] };
+  });
+
+  handle('logs:share', async (payload = {}) => shareLog(isPlainObject(payload) ? payload : {}));
 
   handle('app:openFolder', async (key) => {
     const paths = gamePaths();
@@ -7093,6 +10467,7 @@ function registerIpc() {
       instance: paths.gameRoot,
       instances: INSTANCES_DIR,
       mods: paths.mods,
+      modsDisabled: modsDisabledDirectory(),
       versions: paths.versions,
       logs: paths.logs,
       saves: paths.saves,
@@ -7128,6 +10503,18 @@ function registerIpc() {
     clipboard.writeText(value);
     return { ok: true };
   });
+
+  handle('msa:status', async () => ({
+    ...msaPublic(),
+    accounts: accountsPublic(),
+    activeAccount: publicAccount(activeAccount())
+  }));
+
+  handle('msa:begin', async () => msaBegin());
+
+  handle('msa:cancel', async () => msaCancel());
+
+  handle('msa:signOut', async (accountId) => msaSignOut(accountId || null));
 
   handle('launch:start', async (payload) => {
     const account = activeAccount();
@@ -7190,6 +10577,19 @@ if (!gotLock) {
     app.quit();
   });
 }
+
+let quittingAfterServers = false;
+
+app.on('before-quit', (event) => {
+  if (quittingAfterServers) return;
+  const running = localServers.filter((server) => localServerRuntime.get(server.id)?.child);
+  if (!running.length) return;
+  quittingAfterServers = true;
+  event.preventDefault();
+  const force = setTimeout(() => app.quit(), 7000);
+  force.unref?.();
+  shutdownLocalServers().finally(() => app.quit());
+});
 
 app.on('window-all-closed', () => {
   if (process.platform !== 'darwin') app.quit();

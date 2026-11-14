@@ -1,6 +1,6 @@
 'use strict';
 
-/* NexyLauncher 1.0 — aviso de nuevas versiones del launcher. */
+/* NexyLauncher 1.1 — aviso de nuevas versiones del launcher. */
 (() => {
   const App = window.NexyApp;
   const api = App.api;
@@ -104,7 +104,7 @@
     const url = lastResult?.url;
     if (!url) return;
     api.openExternal(url)
-      .then(() => toast('Descarga abierta en el navegador. Ejecuta el instalador sobre la versión actual: tus datos se conservan.', 'info', 'Descargando actualización'))
+      .then(() => toast('Descarga abierta en el navegador. Ejecuta el instalador y elige la carpeta que quieras: tus cuentas, instancias y ajustes se conservan.', 'info', 'Descargando actualización'))
       .catch(() => toastError('No se pudo abrir el enlace de descarga.', 'Descarga no disponible'));
   }
 

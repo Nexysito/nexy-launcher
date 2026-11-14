@@ -1,6 +1,6 @@
 'use strict';
 
-/* NexyLauncher 1.0 — asistente de IA, crashes y arreglos automáticos. */
+/* NexyLauncher 1.1 — asistente de IA, crashes y arreglos automáticos. */
 (() => {
   const App = window.NexyApp;
   const api = App.api;

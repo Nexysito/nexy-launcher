@@ -1,6 +1,6 @@
 'use strict';
 
-/* NexyLauncher 1.0 — mundos, resource packs, shaders y capturas. */
+/* NexyLauncher 1.1 — mundos, resource packs, shaders y capturas. */
 (() => {
   const App = window.NexyApp;
   const api = App.api;

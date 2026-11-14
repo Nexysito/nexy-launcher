@@ -1,6 +1,6 @@
 'use strict';
 
-/* NexyLauncher 1.0 — gestor de mods, actualizador y buscador. */
+/* NexyLauncher 1.1 — gestor de mods, actualizador y buscador. */
 (() => {
   const App = window.NexyApp;
   const api = App.api;

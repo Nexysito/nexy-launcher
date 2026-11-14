@@ -1,6 +1,6 @@
-# NexyLauncher 1.0
+# NexyLauncher 1.1
 
-Launcher de escritorio para **Minecraft: Java Edition** centrado en **cuentas offline / no premium**. Interfaz oscura en español, gestión de versiones, cargadores de mods, mods, servidores y ajustes de lanzamiento, construido con **Electron** y **minecraft-launcher-core**.
+Launcher de escritorio para **Minecraft: Java Edition** con **cuentas offline y cuentas Microsoft**. Interfaz oscura en español, gestión de versiones, cargadores de mods, mods, servidores y ajustes de lanzamiento, construido con **Electron** y **minecraft-launcher-core**.
 
 > Proyecto independiente. No está afiliado a Mojang Studios ni a Microsoft. Minecraft es una marca de Mojang Studios.
 
@@ -9,28 +9,37 @@ Launcher de escritorio para **Minecraft: Java Edition** centrado en **cuentas of
 ## Características
 
 - **Cuentas offline**: crea varios nombres de jugador, cámbialos y elimínalos sin cuenta de Microsoft.
-- **Instancias aisladas**: cada instancia tiene asignada su versión de Minecraft y su cargador, además de su propia carpeta con versiones, mods, mundos, recursos y ajustes. Cambia entre ellas desde **Instancias** sin mezclar archivos; la instancia activa se muestra en Inicio.
-- **Vista de detalle de instancia**: al abrir una instancia verás su carátula, nombre, descripción y la lista de mods. Desde ahí puedes jugar, buscar e instalar mods de Modrinth compatibles, activarlos o desactivarlos renombrándolos a `.jar.disabled`, eliminarlos, abrir los ajustes, la carpeta o `latest.log`, analizar el último crash, verificar, exportar, duplicar o eliminar la instancia.
+- **Cuentas Microsoft**: inicia sesión con tu cuenta real de Minecraft: Java Edition desde la pantalla de bienvenida o desde **Cuenta y perfiles**. Usa el flujo oficial de código de dispositivo con el cliente público de Minecraft, así que **no hay que crear una aplicación en Azure ni esperar la aprobación de Mojang**. La sesión vive solo en memoria y caduca al cerrar el launcher; en `accounts.json` solo se guarda el nombre y el UUID públicos.
+- **Instancias aisladas**: cada instancia tiene asignada su versión de Minecraft y su cargador, además de su propia carpeta con el nombre de la instancia (versiones, mods, mundos, recursos y ajustes). Cada carpeta incluye `instancia.md` con su descripción y `icono.png` con su carátula. Cambia entre ellas desde **Instancias** sin mezclar archivos; la instancia activa se muestra en Inicio.
+- **Vista de detalle de instancia**: al abrir una instancia verás su carátula, nombre, descripción y la lista de mods. Desde ahí puedes jugar, buscar e instalar mods de Modrinth compatibles, activarlos o desactivarlos moviéndolos entre `mods/` y `mods/.desactivados/`, eliminarlos, abrir los ajustes, la carpeta o `latest.log`, analizar el último crash, verificar, exportar, duplicar o eliminar la instancia.
 - **Importar y exportar modpacks**: importa `.mrpack` de Modrinth, ZIP de CurseForge y exportaciones de NexyLauncher con su versión y cargador, y exporta cualquier instancia como `.mrpack` o ZIP con mods, configuración y recursos (y mundos si lo eliges).
+- **Importar desde otros launchers**: detecta las instancias instaladas por CurseForge, Modrinth, Prism Launcher, MultiMC, PolyMC, GDLauncher, Dawn Launcher, Feather, ATLauncher, Technic y los perfiles personalizados del launcher oficial. Elige cuáles quieres traer y, si la detección falla, selecciona a mano la carpeta raíz del launcher. Se usan en su carpeta original: no se copian archivos ni se duplican mods o mundos.
 - **Ajustes por instancia**: memoria RAM, resolución, Java, argumentos JVM y del juego y minimizar al lanzar propios de cada instancia, heredando los globales cuando no se configuran.
 - **Verificar y reparar**: comprueba la versión base, el cargador, las librerías y los recursos de una instancia y descarga lo que falte con un solo botón.
 - **UUID offline correcto**: se genera el UUID v3 de `OfflinePlayer:<nombre>` para que tus mundos y avances mantengan la misma identidad.
 - **Catálogo de versiones**: el selector de **Inicio** incluye el catálogo oficial de Mojang, con snapshots opcionales; al pulsar **Jugar** se descarga e instala automáticamente lo que falte.
-- **Cargadores integrados**: elige **Vanilla**, **Fabric**, **Forge**, **NeoForge** o **Quilt** y su versión. Si faltan la versión base o el cargador, Nexy los instala automáticamente al pulsar **Jugar**.
+- **Cargadores integrados**: elige **Vanilla**, **Fabric**, **Forge**, **NeoForge** o **Quilt** y su versión. Si faltan la versión base o el cargador, NexyLauncher los instala automáticamente al pulsar **Jugar**.
 - **Versiones modificadas**: detecta instalaciones existentes de Forge, NeoForge, Fabric y Quilt, las etiqueta con su cargador y versión base y permite lanzarlas directamente desde la lista de versiones instaladas.
 - **Mods integrados**: busca e instala mods desde **Modrinth** (sin cuenta) o **CurseForge** (con API key opcional), filtrando por versión de Minecraft y cargador. Cada instancia tiene su propio buscador de Modrinth que instala la última versión compatible con un clic y abre una ficha con descripción, galería y versiones. En Modrinth, las dependencias obligatorias se instalan automáticamente.
 - **Lanzamiento guiado**: selecciona versión, cargador, memoria RAM, resolución, Java y argumentos; el launcher descarga lo que falte, elige el Java que pide cada versión y muestra progreso, descargas y consola en vivo.
+- **Java automático**: si falta la versión de Java que necesita Minecraft o un servidor local, NexyLauncher descarga el JRE de Adoptium en `<carpeta de datos>\java`, lo asigna a esa versión y reintenta el arranque sin pedir rutas ni carpetas.
 - **Conexión rápida a servidores**: guarda servidores y entra directamente. En 1.20+ usa `--quickPlayMultiplayer`; en versiones anteriores usa `--server` / `--port`.
-- **Gestor de mods**: arrastra archivos `.jar` o selecciónalos, actívalos/desactívalos renombrándolos a `.jar.disabled` y elimínalos.
+- **Gestor de mods**: arrastra archivos `.jar` o selecciónalos, actívalos/desactívalos moviéndolos a `mods/.desactivados/` y elimínalos.
 - **Actualizador de mods**: en **Mods → Instalados**, pulsa **Buscar actualizaciones** para consultar Modrinth con la versión de Minecraft y el cargador de la instancia. Muestra la versión instalada, la nueva, el canal (estable/beta/alpha), el changelog y permite actualizar uno o todos los seleccionados conservando su estado activo o desactivado.
+- **Copias automáticas de mundos**: antes de lanzar, NexyLauncher copia solo los mundos que han cambiado desde la última copia y conserva un número configurable de ZIPs por mundo. Evita perder progreso sin repetir copias de mundos intactos.
+- **Historial de sesiones**: cada partida se registra con instancia, versión, cargador, cuenta, duración, código de salida y si terminó con error. Se consulta desde **Ajustes → Copias y sesiones** y se resume en Inicio.
+- **Compartir registros**: **Compartir** en la consola o **Subir a mclo.gs** en Ajustes publica el registro en mclo.gs y copia el enlace al portapapeles, sin cuenta ni clave.
 - **Contenido local**: nueva página **Contenido** con pestañas para **Mundos**, **Resource packs**, **Shaders** y **Capturas**. Permite crear y restaurar copias de seguridad de mundos en ZIP, duplicarlos, abrirlos o eliminarlos; añadir, activar/desactivar y borrar resource packs y shaders; y ver una galería de capturas con miniaturas, visor ampliado, apertura y borrado.
+- **Cuenta Microsoft en el launcher**: añade tu cuenta desde la pantalla de bienvenida o desde **Cuenta y perfiles**. El launcher muestra un código temporal que introduces en `microsoft.com/link`; nunca pide tu contraseña ni guarda tokens. La cuenta se puede activar como perfil y se usa para lanzar Minecraft con autenticación real (compatible con servidores premium). Si la sesión caducó, la interfaz pide iniciar sesión de nuevo antes de jugar.
+- **Skins y selector rápido de perfiles**: la cara del perfil se genera a partir de la skin real de la cuenta Microsoft. En las cuentas offline puedes subir una skin PNG (64×64 o 64×32), cambiarla o quitarla. El botón de cuenta de la barra superior abre un selector para cambiar de perfil al instante, y la sesión de Microsoft se renueva automáticamente antes de caducar.
 - **Estado de servidores**: cada servidor guardado muestra si está en línea, su latencia, jugadores conectados/máximos, versión y MOTD mediante Server List Ping (TCP + VarInt), con soporte de registros SRV y un botón para comprobar todos de nuevo.
+- **Servidores locales**: crea un servidor Vanilla oficial en tu equipo sin salir del launcher. NexyLauncher descarga el `.jar` de Mojang con verificación SHA-1, prepara el EULA y `server.properties`, comprueba que el puerto esté libre y permite arrancarlo, pararlo y enviar comandos desde una consola integrada.
 - **Análisis de crashes**: el menú **⋯** del detalle analiza `latest.log` y el informe más reciente de `crash-reports`, detecta causas habituales (memoria, dependencias, mixins, mods incompatibles, Java, gráficos, permisos, red o mundos dañados) y propone soluciones. El informe se puede copiar al portapapeles.
 - **Asistente de IA**: página **Asistente** con chat que conoce la instancia, los mods, las versiones y los ajustes del launcher. Usa tu propia API key (OpenAI o cualquier API compatible), lee el crash solo si lo autorizas, propone arreglos (desactivar mods, cambiar RAM, argumentos JVM, Java o reparar la instancia) y permite restaurar el estado anterior con un botón.
 - **Ajustes completos**: memoria mínima/máxima, resolución y pantalla completa, rutas de Java por versión, argumentos JVM y del juego, minimizar al lanzar, inicio de sesión automático, snapshots, proveedor de mods y cinco temas de color. Los ajustes de lanzamiento pueden sobrescribirse por instancia.
 - **Comunidad y feedback**: accesos al formulario de Google y al contacto por mensaje directo de Discord (`zombigamer55`) desde **Inicio** y **Ajustes**, además de **Copiar diagnóstico** (versión, SO, Java, instancia y mods) y **Abrir logs**. El servidor de Discord se muestra como **Próximamente**.
-- **Consola y registros**: consola integrada con niveles, copia al portapapeles y registro de cada lanzamiento en `logs/nexy-launcher-last.log`.
-- **Persistencia portable**: cuentas, servidores, ajustes, estado de ventana y caché del manifiesto se guardan en `data\` junto al launcher, no en `%APPDATA%`.
+- **Consola y registros**: consola integrada con niveles, copia al portapapeles, botón **Compartir** (mclo.gs) y registro de cada lanzamiento en `logs/nexy-launcher-last.log`.
+- **Datos estables**: cuentas, servidores, ajustes, historial de sesiones e instancias se guardan en `%APPDATA%\NexyLauncher`, así actualizar o instalar en otra carpeta no los mueve. Si quieres llevarlo todo junto al `.exe`, activa el modo portable con un `portable.txt`.
 - **Interfaz cuidada**: ventana sin marco, barra lateral, pantalla de bienvenida, avatares pixel generados, modales y notificaciones (sin `alert()`), adaptada a ventanas de 1040×680 en adelante.
 - **Seguridad**: `contextIsolation` activo, `nodeIntegration` desactivado, puente `preload` acotado, CSP, validación de IPC, rutas y entradas, y bloqueo de navegación externa no permitida.
 
@@ -40,7 +49,7 @@ Launcher de escritorio para **Minecraft: Java Edition** centrado en **cuentas of
 
 - **Windows 10/11** (probado). Electron también permite Linux y macOS, aunque el launcher se ha validado en Windows.
 - **Node.js 20 o superior** y npm (probado con Node 24).
-- **Java** para ejecutar Minecraft y los instaladores de cargadores. Nexy lee el requisito real de cada versión (`javaVersion.majorVersion` en su JSON) y elige un Java compatible; no fuerza siempre Java 21:
+- **Java** para ejecutar Minecraft y los instaladores de cargadores. NexyLauncher lee el requisito real de cada versión (`javaVersion.majorVersion` en su JSON) y elige un Java compatible; no fuerza siempre Java 21:
   - Minecraft 1.16.5 o anterior: Java 8 (solo Java 8).
   - Minecraft 1.17 – 1.20.4: Java 17.
   - Minecraft 1.20.5 – 1.21.x: Java 21.
@@ -48,8 +57,9 @@ Launcher de escritorio para **Minecraft: Java Edition** centrado en **cuentas of
 - Conexión a internet la primera vez que se descarga una versión, un cargador, librerías o recursos.
 - Una copia legítima de Minecraft: Java Edition. Este launcher no incluye ni distribuye el juego.
 - Para **CurseForge**, una API key gratuita del portal de desarrolladores. **Modrinth no necesita cuenta ni clave**.
+- Para las **cuentas Microsoft**, una cuenta que sea propietaria de Minecraft: Java Edition. La sesión se inicia desde el propio launcher con un código temporal y no requiere Azure ni aprobación de Mojang.
 
-El launcher detecta Java en `JAVA_HOME`, en el `PATH` y en las ubicaciones habituales de Oracle, Temurin, Adoptium, Microsoft y el runtime de Mojang. También puedes elegir el ejecutable manualmente en **Ajustes → Java**. Si falta el Java que pide una versión, el aviso de **Jugar** permite instalarlo: Nexy descarga un JRE de Adoptium y te pregunta en qué carpeta instalarlo.
+El launcher detecta Java en `JAVA_HOME`, en el `PATH` y en las ubicaciones habituales de Oracle, Temurin, Adoptium, Microsoft y el runtime de Mojang. También puedes elegir el ejecutable manualmente en **Ajustes → Java**. Si falta el Java que pide una versión, el aviso de **Jugar** permite instalarlo: NexyLauncher descarga un JRE de Adoptium y te pregunta en qué carpeta instalarlo.
 
 ---
 
@@ -69,16 +79,16 @@ npm run dev
 npm run check
 ```
 
-Consulta la sección de compilación más abajo para generar el instalador MSI con Electron Builder.
+Consulta la sección de compilación más abajo para generar el instalador EXE con Electron Builder.
 
 ---
 
 ## Uso rápido
 
-1. Escribe un nombre de jugador (3–16 caracteres: letras, números o `_`) y pulsa **Entrar al launcher**.
-2. En **Inicio**, elige una versión base de Minecraft y, si quieres mods, un cargador y su versión. Pulsa **JUGAR**: si falta algo, Nexy descargará la versión base y el cargador automáticamente.
+1. Escribe un nombre de jugador (3–16 caracteres: letras, números o `_`) y pulsa **Entrar al launcher**, o pulsa **Iniciar sesión con Microsoft** para usar tu cuenta real de Java Edition con un código temporal.
+2. En **Inicio**, elige una versión base de Minecraft y, si quieres mods, un cargador y su versión. Pulsa **JUGAR**: si falta algo, NexyLauncher descargará la versión base y el cargador automáticamente.
 3. Para separar juegos, crea una instancia en **Instancias → Nueva instancia**. Cada una tiene asignada su propia versión de Minecraft y su cargador (Vanilla, Fabric, Forge, NeoForge o Quilt), además de su carpeta de mods, mundos y ajustes. Pulsa una tarjeta para abrir su detalle, donde puedes añadir carátula y descripción, pulsar **Buscar mods** para instalar mods de Modrinth, gestionar los instalados, jugar o abrir sus ajustes. La instancia activa aparece en la tarjeta de Inicio.
-4. Para traer un modpack, pulsa **Instancias → Importar** y elige un `.mrpack` de Modrinth, un ZIP de CurseForge o una exportación de NexyLauncher. Nexy crea la instancia, aplica la versión y el cargador y descarga los mods.
+4. Para traer un modpack, pulsa **Instancias → Importar** y elige un `.mrpack` de Modrinth, un ZIP de CurseForge o una exportación de NexyLauncher. NexyLauncher crea la instancia, aplica la versión y el cargador y descarga los mods.
 5. Para jugar una instalación modificada que ya existe, usa el botón de reproducción de **Listo para jugar** en Inicio. El selector de Inicio muestra solo versiones base para evitar duplicados.
 6. Para entrar a un servidor, guárdalo en **Servidores** y usa **Jugar en el servidor**, o selecciónalo en **Juego rápido** desde Inicio.
 7. En el detalle de una instancia, pulsa **Buscar mods** para abrir su buscador de Modrinth: los resultados ya están filtrados por la versión de Minecraft y el cargador de la instancia. Pulsa **Descargar** para instalar la última versión compatible o abre la ficha del mod para ver **Descripción**, **Galería** y **Versiones**. En **Mods → Descubrir** sigue disponible el buscador global con Modrinth y CurseForge, y en **Instalados** puedes activar, desactivar o eliminar archivos y buscar actualizaciones.
@@ -89,23 +99,62 @@ Consulta la sección de compilación más abajo para generar el instalador MSI c
 
 ---
 
+## Cuentas Microsoft
+
+NexyLauncher puede iniciar sesión con una cuenta real de **Minecraft: Java Edition** sin depender de otro launcher y sin pedirte que registres una aplicación en Azure.
+
+### Cómo funciona
+
+1. Pulsa **Iniciar sesión con Microsoft** en la pantalla de bienvenida o en **Cuenta y perfiles → Cuenta Microsoft → Añadir**.
+2. El launcher muestra un **código temporal** y abre `microsoft.com/link` en el navegador.
+3. Introduce el código y completa el inicio de sesión en Microsoft. NexyLauncher nunca ve tu contraseña ni tu código de verificación.
+4. Al terminar, el launcher valida la cadena Xbox Live → XSTS → Minecraft, comprueba que la cuenta posee Java Edition y guarda solo el **nombre y el UUID públicos** del perfil.
+
+El flujo usa el inicio de sesión oficial por **código de dispositivo** con el cliente público de Minecraft (`00000000402b5328`) contra `login.live.com`. Por eso **no hace falta crear una aplicación de Azure ni solicitar la aprobación de Mojang**.
+
+### Privacidad de la sesión
+
+- Los tokens de Microsoft, Xbox Live, XSTS y Minecraft viven **solo en memoria**. No se escriben en `settings.json`, `accounts.json`, registros ni argumentos.
+- Al cerrar NexyLauncher la sesión caduca. La cuenta sigue guardada como perfil, pero para volver a jugar hay que iniciar sesión otra vez.
+- El renderer solo recibe el nombre, el UUID y el estado de la sesión.
+- Si la sesión caduca mientras la cuenta está activa, **Jugar** abre el inicio de sesión de Microsoft en lugar de lanzar el juego.
+- La skin se guarda como imagen pública en la carpeta de datos (`skins\`) para poder mostrar la cara del perfil sin volver a descargarla. No contiene tokens ni datos privados.
+
+### Gestionar cuentas
+
+En **Cuenta y perfiles** puedes:
+
+- Ver las cuentas Microsoft guardadas y su estado (**Activa** o **Caducada**).
+- **Usar** una cuenta como perfil activo.
+- **Iniciar sesión** de nuevo o **cerrar la sesión de Microsoft** sin borrar el perfil.
+- **Eliminar** el perfil del launcher. Los mundos y partidas guardadas no se tocan.
+
+Las cuentas Microsoft y las offline conviven en el mismo launcher: elige una u otra como perfil activo y el lanzamiento usará la autenticación correspondiente.
+
+---
+
 ## Dónde se guardan los datos
 
 ### Datos del launcher
 
-En la carpeta donde está instalado el launcher: `<carpeta del launcher>\data\` (en desarrollo, `data\` dentro del proyecto). **No se usa `%APPDATA%`.**
+En una instalación normal, NexyLauncher guarda sus datos en `%APPDATA%\NexyLauncher\`. Esa carpeta **no cambia** al actualizar ni al elegir otra ubicación de instalación: cuentas, instancias, servidores, ajustes y skins siguen ahí.
 
-Si esa carpeta no permite escritura (por ejemplo, dentro de `Program Files`), Nexy usa la carpeta de datos predeterminada de Electron como respaldo. Para mantenerlo totalmente portable, coloca el launcher en una carpeta con permisos de escritura.
+En desarrollo (al ejecutar `npm start`) se usa `data\` dentro del proyecto. Si quieres que una instalación funcione en modo **portable**, crea un archivo vacío llamado `portable.txt` junto a `NexyLauncher.exe`: los datos se guardarán en `data\` dentro de la carpeta del launcher y podrás moverlo con una unidad USB. En modo portable, actualiza sustituyendo el `.exe` (y los archivos de la app) sin ejecutar el instalador, porque el instalador limpia la carpeta de instalación anterior.
 
-Si ya usabas una versión anterior, sus datos siguen en `%APPDATA%\NexyLauncher`. No se mueven automáticamente: copia a `data\` los archivos o instancias que quieras conservar, o elimina la carpeta antigua para recuperar el espacio.
+Si actualizas desde una versión anterior cuyos datos vivían junto al ejecutable, el launcher los detecta y los copia automáticamente a `%APPDATA%\NexyLauncher` en el primer arranque (incluidas las instancias y `.minecraft`). Las carpetas `cache` y `java` no se copian porque se regeneran solas. La carpeta antigua no se borra.
 
 | Archivo | Contenido |
 | --- | --- |
 | `settings.json` | Ajustes, tema, memoria, resolución, versión y cargador de la instancia activa, proveedor de mods, lista de instancias con su versión/cargador asignados, su carpeta y sus ajustes propios, Java (`javaPath` y `javaPaths` por versión mayor), API key de CurseForge y configuración del asistente de IA (`aiApiKey`, `aiBaseUrl`, `aiModel`, `aiAutoReadCrash`) |
-| `accounts.json` | Cuentas offline guardadas |
+| `accounts.json` | Cuentas offline y perfiles Microsoft. De las cuentas Microsoft solo se guarda nombre, UUID y XUID públicos; los tokens nunca se escriben en disco |
+| `skins/` | Skins locales de los perfiles (PNG 64×64 o 64×32) usadas para mostrar la cara en el launcher |
 | `servers.json` | Servidores guardados |
+| `local-servers.json` | Servidores locales creados desde el launcher: nombre, versión, puerto, memoria y modo online |
+| `local-servers/` | Carpeta de cada servidor local, con `server.jar`, `eula.txt`, `server.properties`, `.nexy-server.json`, el mundo y los logs |
+| `java/` | JRE descargados automáticamente por el launcher, uno por versión mayor (`java\jre-21`, `java\jre-25`…) |
+| `sessions.json` | Historial de sesiones: instancia, versión, cargador, cuenta, inicio, duración, código de salida y si se cerró con error (máximo 200 entradas) |
 | `window-state.json` | Tamaño, posición y estado maximizado de la ventana |
-| `instances/` | Carpetas de las instancias creadas por el launcher |
+| `instances/` | Carpetas de las instancias creadas por el launcher, cada una con el nombre de su instancia |
 | `<instancia>/.nexy/mods.json` | Metadatos de los mods instalados desde Modrinth (proyecto, versión y archivo) para marcarlos como **Instalado** al volver al buscador |
 | `<instancia>/.nexy/ai-backups/` | Copias previas a cada arreglo de la IA (mods, índice y ajustes sin claves); se conservan las 12 más recientes |
 | `cache/version_manifest.json` | Caché del manifiesto de versiones de Mojang |
@@ -118,22 +167,30 @@ $env:NEXY_USER_DATA = "D:\NexyLauncherData"
 npm start
 ```
 
-La **API key de CurseForge y la del asistente se guardan localmente** en `settings.json`. Ninguna se envía a servidores de Nexy: la de CurseForge solo se usa como cabecera `x-api-key` en las peticiones directas a su API, y la del asistente solo se envía al proveedor de IA configurado. El renderer nunca recibe las claves (solo sabe si están configuradas). El archivo no está cifrado, así que protege tu cuenta de Windows y no compartas ese archivo.
+La **API key de CurseForge y la del asistente se guardan localmente** en `settings.json`. Ninguna se envía a servidores de NexyLauncher: la de CurseForge solo se usa como cabecera `x-api-key` en las peticiones directas a su API, y la del asistente solo se envía al proveedor de IA configurado. El renderer nunca recibe las claves (solo sabe si están configuradas). El archivo no está cifrado, así que protege tu cuenta de Windows y no compartas ese archivo.
 
 ### Instancias y carpeta del juego
 
-Cada instancia es una raíz de Minecraft independiente. Por defecto las nuevas se crean en `<carpeta del launcher>\data\instances\<nombre>\`, pero puedes elegir cualquier carpeta al crearlas.
+Cada instancia es una raíz de Minecraft independiente y vive en su propia carpeta con su nombre: `<carpeta de datos>\instances\<nombre>\` (`%APPDATA%\NexyLauncher\instances\...` en una instalación normal, o `data\instances\...` en modo portable). Al crearla puedes elegir otra carpeta, pero las que crea el launcher se guardan ahí.
 
-La primera vez que se abre esta versión, los ajustes existentes se migran a una instancia llamada **Principal**. La carpeta de juego predeterminada es `<carpeta del launcher>\data\.minecraft`.
+Si vienes de una versión anterior con `<carpeta de datos>\.minecraft`, la primera vez que abras esta versión esa carpeta se traslada automáticamente a `<carpeta de datos>\instances\<nombre de la instancia>` (el traslado es instantáneo porque no sale de la misma unidad). Si no se puede mover, se conserva la ruta antigua para no perder nada. La instancia nueva por defecto se llama **Principal**.
+
+Cada carpeta de instancia incluye su propia ficha, así que se entiende aunque la muevas de sitio:
+
+- `instancia.md`: descripción legible, versión, cargador, fechas y ruta.
+- `icono.png`: carátula de la instancia (si tiene una).
+- `.nexy-instance.json`: datos internos que usa el launcher para reconocerla.
+
+Al editar la descripción o la carátula desde NexyLauncher, esos archivos se actualizan solos. Si mueves una carpeta con su ficha, el launcher adopta la descripción y el icono al arrancar.
 
 Desde **Instancias** puedes:
 
 - **Abrir una instancia** pulsando su tarjeta. Se activa y se muestra la vista de detalle con su carátula, nombre, descripción, versión, cargador, lista de mods y el botón **Buscar mods**. El botón **Instancias** vuelve a la lista.
 - **Crear** una instancia con nombre, versión de Minecraft, cargador, versión del cargador y carpeta propios.
 - **Importar** un modpack o una instancia desde `.mrpack`, ZIP de CurseForge o exportación de NexyLauncher.
-- **Editar** el nombre, la descripción, la versión o el cargador sin mover archivos. La descripción es opcional (máximo 500 caracteres) y aparece en la tarjeta.
-- **Cambiar la carátula** pulsando la imagen del detalle. La imagen se recorta a 16:9, se reduce a un máximo de 800×450 y se guarda dentro de la instancia como data URL validada.
-- **Gestionar los mods** desde el detalle: **Buscar mods** abre un buscador de Modrinth propio de la instancia, ya filtrado por su versión de Minecraft y su cargador. **Descargar** instala la última versión compatible con sus dependencias obligatorias; al pulsar el nombre del mod se abre su ficha con **Descripción**, **Galería** y **Versiones**, donde puedes descargar una versión concreta, filtrar por canal y ver o instalar versiones no compatibles con confirmación. Los mods ya instalados se muestran como **Instalado**, también los que llegan como dependencia. En el menú **⋯ → Añadir mod desde archivo** puedes elegir `.jar` de tu equipo. Desde el detalle también puedes activarlos o desactivarlos (renombrado `.jar` ↔ `.jar.disabled`) y eliminarlos con confirmación.
+- **Editar** el nombre, la descripción, la versión o el cargador. Al cambiar el nombre de una instancia gestionada por el launcher, su carpeta también se renombra para seguir llevando el nombre. La descripción es opcional (máximo 500 caracteres), aparece en la tarjeta y se guarda en `instancia.md`.
+- **Cambiar la carátula** pulsando la imagen del detalle. La imagen se recorta a 16:9, se reduce a un máximo de 800×450 y se guarda en `icono.png` dentro de la instancia, además de mostrarse en el launcher.
+- **Gestionar los mods** desde el detalle: **Buscar mods** abre un buscador de Modrinth propio de la instancia, ya filtrado por su versión de Minecraft y su cargador. **Descargar** instala la última versión compatible con sus dependencias obligatorias; al pulsar el nombre del mod se abre su ficha con **Descripción**, **Galería** y **Versiones**, donde puedes descargar una versión concreta, filtrar por canal y ver o instalar versiones no compatibles con confirmación. Los mods ya instalados se muestran como **Instalado**, también los que llegan como dependencia. En el menú **⋯ → Añadir mod desde archivo** puedes elegir `.jar` de tu equipo. Desde el detalle también puedes activarlos o desactivarlos (el archivo pasa entre `mods/` y `mods/.desactivados/`) y eliminarlos con confirmación.
 - **Jugar** desde la tarjeta o desde el detalle: activa la instancia y lanza directamente la versión y el cargador asignados.
 - **Activar** otra instancia; Inicio y Mods pasan a usar su carpeta y su asignación.
 - **Ajustes** (engranaje) abre la configuración propia de la instancia: memoria, resolución, Java, argumentos y minimizar al lanzar. Cada valor puede heredar el ajuste global.
@@ -150,8 +207,9 @@ Dentro de cada instancia encontrarás:
 ```text
 instances/<nombre>/
 ├─ versions/     versiones instaladas (JSON + jar)
-│  └─ <id>/nexy-loader.json   marcador de cargador instalado por Nexy
-├─ mods/         mods .jar y .jar.disabled
+│  └─ <id>/nexy-loader.json   marcador de cargador instalado por NexyLauncher
+├─ mods/         mods activos que carga Minecraft
+│  └─ .desactivados/          mods desactivados (la subcarpeta no se carga)
 ├─ saves/        mundos
 ├─ resourcepacks/
 ├─ shaderpacks/
@@ -161,10 +219,35 @@ instances/<nombre>/
 ├─ libraries/    librerías
 ├─ logs/         latest.log y nexy-launcher-last.log
 ├─ .nexy/backups/worlds/  copias de seguridad de mundos en ZIP
-└─ .nexy-instance.json        marcador de instancia creada por Nexy
+├─ instancia.md               ficha legible de la instancia
+├─ icono.png                  carátula (si tiene)
+└─ .nexy-instance.json        marcador de instancia creada por NexyLauncher
 ```
 
-La carpeta `mods` pertenece a la instancia activa. Para usar mods incompatibles entre sí, crea instancias separadas en lugar de mezclarlos.
+La carpeta `mods` pertenece a la instancia activa. Para usar mods incompatibles entre sí, crea instancias separadas en lugar de mezclarlos. Los mods desactivados se guardan en `mods/.desactivados/` para que Minecraft solo vea los que están activos; los `.jar.disabled` antiguos se trasladan ahí automáticamente al arrancar.
+
+### Importar instancias de otros launchers
+
+**Instancias → Importar** abre el detector de launchers. NexyLauncher busca sus carpetas habituales y muestra solo los que tienen instancias:
+
+| Launcher | Carpeta detectada |
+| --- | --- |
+| CurseForge | `%USERPROFILE%\curseforge\minecraft\Instances` |
+| Modrinth | `%APPDATA%\ModrinthApp\profiles` |
+| Prism Launcher | `%APPDATA%\PrismLauncher\instances` |
+| MultiMC / PolyMC | `%APPDATA%\MultiMC\instances` y `%APPDATA%\PolyMC\instances` |
+| GDLauncher | `%APPDATA%\gdlauncher_carbon\data\instances` |
+| Dawn Launcher | `%APPDATA%\Dawn Launcher\dawn-data\minecraft\instances` (también Dawn 3 y la ruta de `dawn-data.json`) |
+| Feather | `%APPDATA%\.feather\instances` y `%APPDATA%\Feather\instances` |
+| ATLauncher | `%APPDATA%\ATLauncher\instances` |
+| Technic | `%APPDATA%\.technic\modpacks` |
+| Minecraft oficial | perfiles de `%APPDATA%\.minecraft\launcher_profiles.json` con carpeta de juego propia |
+
+Al elegir un launcher verás sus instancias con la versión, el cargador, el número de mods y de mundos. Marca las que quieras (o **Seleccionar todas**) y pulsa **Importar seleccionadas**. NexyLauncher lee los metadatos propios de cada launcher (`minecraftinstance.json`, `profile.json`, `mmc-pack.json`, `instance.json`, `dawn-instance.json`…), y si no los encuentra deduce la versión y el cargador de la carpeta `versions`.
+
+Si un launcher no aparece, usa **Elegir carpeta…** y selecciona su carpeta raíz de instancias (o una instancia concreta). NexyLauncher inspecciona la carpeta igualmente y muestra lo que encuentre.
+
+Las instancias se registran **en su carpeta original**, sin copiar archivos: los mods, mundos y ajustes siguen siendo los del otro launcher y se comparten. NexyLauncher añade su ficha `instancia.md`, su icono `icono.png` y `.nexy-instance.json`, pero no borra ni modifica el contenido. Por eso, al eliminar una instancia importada, la opción de borrar archivos no está disponible: quítala de NexyLauncher y gestiona la carpeta desde el otro launcher.
 
 ### Importar modpacks
 
@@ -176,7 +259,7 @@ La carpeta `mods` pertenece a la instancia activa. Para usar mods incompatibles 
 | ZIP de CurseForge | `manifest.json` y `overrides/` | Los mods se descargan de la API de CurseForge y necesitan una API key configurada. |
 | ZIP de NexyLauncher | `nexy-pack.json` y `overrides/` | Conserva la versión, el cargador, la versión del cargador y la descripción de la exportación. |
 
-Durante la importación Nexy crea una instancia nueva con un nombre libre, extrae los overrides con validación de rutas y tamaños, descarga los mods que falten y la deja activa. Si algún archivo no se puede descargar, la instancia se crea igualmente y se avisa; después puedes usar **Verificar → Reparar**.
+Durante la importación NexyLauncher crea una instancia nueva con un nombre libre, extrae los overrides con validación de rutas y tamaños, descarga los mods que falten y la deja activa. Si algún archivo no se puede descargar, la instancia se crea igualmente y se avisa; después puedes usar **Verificar → Reparar**.
 
 ### Exportar una instancia
 
@@ -231,7 +314,7 @@ El diagnóstico incluye versión, Electron/Chromium, sistema, CPU, RAM, Java, cu
 
 En **Inicio** se elige una **versión base** de Minecraft y, por separado, un **cargador** y su **versión**. El selector de versión base solo muestra versiones vanilla; las versiones modificadas ya instaladas aparecen en **Listo para jugar**.
 
-| Cargador | Cómo lo instala Nexy | Identificador de la versión instalada |
+| Cargador | Cómo lo instala NexyLauncher | Identificador de la versión instalada |
 | --- | --- | --- |
 | Vanilla | Descarga el perfil y el cliente oficial de Mojang | `<versión>` |
 | Fabric | Perfil oficial de Fabric Meta y librerías de Fabric Maven | `fabric-loader-<loader>-<mc>` |
@@ -241,14 +324,14 @@ En **Inicio** se elige una **versión base** de Minecraft y, por separado, un **
 
 Al pulsar **Jugar**:
 
-1. Nexy comprueba si la versión base está instalada. Si no, la descarga desde Mojang.
+1. NexyLauncher comprueba si la versión base está instalada. Si no, la descarga desde Mojang.
 2. Comprueba si el cargador elegido ya existe. Si no, lo instala con su método oficial.
 3. Guarda un marcador `nexy-loader.json` en la carpeta de la versión con el cargador, su versión y la versión base. Esto permite etiquetar correctamente NeoForge 1.20.1, que se instala con un identificador de Forge.
 4. Combina los JSON de la versión base y del cargador, resuelve librerías y argumentos, elige el Java adecuado y lanza el juego.
 
 Los instaladores de **Forge** y **NeoForge** pueden tardar varios minutos y necesitan Java. Su salida aparece en la consola y en el registro del lanzamiento. Las librerías de **Fabric** y **Quilt** se descargan con verificación SHA-1 cuando el perfil la proporciona; si el host oficial de Fabric Maven no responde, se prueban espejos compatibles.
 
-También puedes seguir usando instalaciones modificadas creadas con los instaladores oficiales. Nexy las detecta por herencia de versiones y las lanza sin reinstalarlas.
+También puedes seguir usando instalaciones modificadas creadas con los instaladores oficiales. NexyLauncher las detecta por herencia de versiones y las lanza sin reinstalarlas.
 
 ---
 
@@ -271,7 +354,7 @@ Al abrir **Ver versiones** se muestran las versiones compatibles con esos filtro
 - En **Modrinth** se verifica el hash SHA-512/SHA-1 cuando está disponible, se evitan duplicados y se instalan automáticamente las dependencias obligatorias (hasta dos niveles).
 - En **CurseForge** se descarga el archivo elegido y se respeta la disponibilidad indicada por la API. Revisa las dependencias que indique el autor del mod; la instalación automática de dependencias está limitada a Modrinth.
 - Los mods deben coincidir con la versión de Minecraft y el cargador. Un mod de Fabric no funciona en Forge y viceversa.
-- Los archivos se pueden desactivar renombrándolos a `.jar.disabled`; el juego no los cargará.
+- Los archivos se pueden desactivar desde la lista: el mod pasa a `mods/.desactivados/` y el juego no lo cargará.
 
 ### Buscador de mods por instancia
 
@@ -284,9 +367,9 @@ El detalle de cada instancia incluye **Buscar mods**, un buscador de Modrinth in
 - Al pulsar el mod se abre su ficha con **Descripción** (Markdown del autor), **Galería** (con visor ampliado) y **Versiones**. **Ver en Modrinth** abre la página oficial en el navegador.
 - La pestaña **Versiones** permite descargar cualquier versión concreta, filtrar por canal (`release`, `beta`, `alpha`) y desactivar **Solo compatibles** para ver el resto. Las versiones incompatibles se señalan con un icono de aviso y piden confirmación antes de instalarse.
 - Tras instalar un mod se refresca la lista completa, incluidas las dependencias, para que sus botones también pasen a **Instalado**.
-- Si hay varias versiones del mismo mod instaladas, se agrupan en una sola fila con un desplegable para elegir la activa. El resto se renombra automáticamente a `.jar.disabled`, y al volver a abrir la instancia se desactivan los duplicados que hayan quedado activos.
+- Si hay varias versiones del mismo mod instaladas, se agrupan en una sola fila con un desplegable para elegir la activa. El resto se mueve automáticamente a `mods/.desactivados/`, y al volver a abrir la instancia se desactivan los duplicados que hayan quedado activos.
 
-Respeta las licencias y condiciones de cada autor al descargar y redistribuir mods. Nexy solo descarga archivos desde las APIs y CDN oficiales de los proveedores.
+Respeta las licencias y condiciones de cada autor al descargar y redistribuir mods. NexyLauncher solo descarga archivos desde las APIs y CDN oficiales de los proveedores.
 
 ### Actualizador de mods
 
@@ -305,6 +388,31 @@ La página **Contenido** trabaja siempre sobre la instancia activa:
 - **Resource packs** y **Shaders**: añade archivos `.zip` o `.jar`, actívalos o desactívalos renombrando a `.disabled`, elimínalos o abre la carpeta correspondiente. No se valida el contenido interno del pack; Minecraft mostrará si es incompatible.
 - **Capturas**: galería de `screenshots` con miniaturas JPEG generadas localmente. Al pulsar una captura se abre un visor ampliado; también se puede abrir el archivo original o eliminarlo. Se listan como máximo las 80 capturas más recientes.
 
+### Copias automáticas de mundos
+
+En **Ajustes → Copias y sesiones** puedes activar **Copiar el mundo antes de jugar** (activado por defecto):
+
+- Antes de cada lanzamiento se revisan los mundos de `saves`. Solo se copia el mundo cuyo `level.dat` es más reciente que su última copia, así que los mundos que no has tocado no generan ZIPs repetidos.
+- Cada copia se guarda en `<instancia>/.nexy/backups/worlds/` con el nombre del mundo y la fecha.
+- **Copias por mundo** decide cuántas se conservan (1–50, 6 por defecto). Al superar ese número se borran las más antiguas de ese mundo.
+- Las copias manuales y la restauración siguen disponibles en **Contenido → Mundos**.
+
+### Historial de sesiones
+
+Cada lanzamiento crea una entrada en `sessions.json` con la instancia, la versión, el cargador, la cuenta, la hora de inicio y, al cerrar Minecraft, la duración, el código de salida y si se cerró con error o se detuvo a mano. Se conservan las 200 más recientes.
+
+- En **Ajustes → Copias y sesiones → Ver historial** aparece la lista con el resultado de cada partida.
+- El panel de Inicio muestra un resumen de la última sesión junto a los datos de la versión.
+- **Borrar historial** elimina solo esos registros: no toca mundos, mods ni ajustes.
+
+### Compartir registros con mclo.gs
+
+Para pedir ayuda sin adjuntar archivos:
+
+- En la consola, **Compartir** sube el contenido visible a [mclo.gs](https://mclo.gs) y copia el enlace al portapapeles.
+- En **Ajustes → Copias y sesiones → Subir a mclo.gs** se sube el `latest.log` de la instancia activa.
+- El envío no necesita cuenta ni clave. Se quitan los códigos de color ANSI y se rechazan los registros de más de 10 MB. El enlace se abre en el navegador y queda copiado para pegarlo en Discord o en el formulario de feedback.
+
 ### Estado de servidores
 
 La lista de **Servidores** hace un Server List Ping a cada dirección:
@@ -313,6 +421,20 @@ La lista de **Servidores** hace un Server List Ping a cada dirección:
 - Usa `dns.resolveSrv` para `_minecraft._tcp.<host>` cuando no se indica un puerto y la dirección no es una IP.
 - Si el servidor está caído, rechaza la conexión o tarda más de cinco segundos, se muestra el motivo y se mantiene la opción de jugar igualmente.
 - **Comprobar estado** vuelve a consultar todos los servidores.
+
+### Servidores locales
+
+La sección **Servidores locales** de la página **Servidores** crea y administra un servidor de Minecraft en tu propio equipo:
+
+- **Crear servidor**: elige nombre, versión estable de Minecraft, puerto y memoria mínima/máxima. El launcher descarga el servidor Vanilla oficial desde el manifiesto de Mojang, comprueba su SHA-1 y muestra el progreso en la tarjeta. No se admiten cargadores en los servidores locales.
+- **EULA y propiedades**: para crear el servidor hay que aceptar el [EULA de Minecraft](https://aka.ms/MinecraftEULA). NexyLauncher escribe `eula.txt`, crea `server.properties` con el puerto, el MOTD y `online-mode`, y conserva el resto de propiedades si ya existían.
+- **Modo online**: activado por defecto, solo permite cuentas premium. Si lo desactivas podrás entrar con cuentas offline, pero cualquiera que conozca tu IP podrá usar el nombre que quiera.
+- **Puerto**: se comprueba que esté libre antes de crear y antes de arrancar. Un mismo puerto no puede usarse en dos servidores locales.
+- **Arranque y parada**: el servidor se ejecuta con `java -XmsNG -XmxMG -jar server.jar nogui` en su propia carpeta. NexyLauncher elige el Java que pide la versión; si falta, avisa para instalarlo desde **Ajustes → Java**. Al detenerlo se envía `stop` y, si no responde, se fuerza el cierre. Al cerrar el launcher también se detienen todos los servidores en marcha para no dejar procesos `java.exe` abiertos.
+- **Consola integrada**: muestra la salida del servidor en vivo, permite enviar comandos (`help`, `list`, `op`, `stop`…) y abrir las carpetas del servidor o de sus logs. La tarjeta indica si está detenido, instalando, iniciando, en línea o con error.
+- **Eliminar**: borra la carpeta completa del servidor, incluido el mundo, los logs y la configuración. Solo se permite cuando el servidor está detenido.
+
+Cada servidor se guarda en `<carpeta de datos>\local-servers\<nombre>\`; su ficha interna `.nexy-server.json` permite reconocerlo si mueves la carpeta.
 
 ### Análisis de crashes
 
@@ -361,7 +483,7 @@ El requisito de Java se lee del propio JSON de la versión (`javaVersion.majorVe
 
 - Se prefiere la coincidencia exacta de versión mayor. Si el requisito es Java 8, solo se acepta Java 8; si es 17 o superior, se acepta la versión exacta o una más nueva.
 - Las rutas elegidas manualmente se guardan por versión mayor en `settings.javaPaths`, de modo que Java 8 para 1.12.2 y Java 25 para 26.3 no se pisan entre sí.
-- Si falta el Java necesario, el aviso de **Jugar** ofrece **Elegir Java…** (usar un ejecutable ya instalado) o **Instalar Java N…** (descargar un JRE de Adoptium y elegir la carpeta de instalación). Al terminar, el lanzamiento se reintenta automáticamente.
+- Si falta el Java necesario, el aviso de **Jugar** ofrece **Elegir Java…** (usar un ejecutable ya instalado) o **Descargar Java N** (descargar el JRE de Adoptium automáticamente en `<carpeta de datos>\java\jre-N`, sin elegir carpeta). Al terminar, el lanzamiento se reintenta automáticamente. Los servidores locales hacen la misma descarga automática al arrancar si falta Java.
 - Si una ruta manual no es válida o es demasiado antigua, el lanzamiento se detiene con un mensaje claro que indica la versión requerida y las detectadas.
 - Los instaladores de Forge y NeoForge usan el mismo Java que se elegiría para la versión base.
 - Los argumentos JVM se añaden a los de Minecraft. El botón **Flags recomendados** de Ajustes inserta un conjunto habitual para G1GC.
@@ -375,12 +497,13 @@ Ejemplo de argumentos JVM:
 
 ---
 
-## Limitaciones de las cuentas offline
+## Cuentas offline y Microsoft
 
-- **No hay inicio de sesión con Microsoft.** No se puede acceder a Realms, skins/capas de cuenta, logros online ni servidores en `online-mode=true`.
-- **Los servidores deben permitir jugadores offline** (`online-mode=false` en `server.properties`). Si un servidor rechaza la conexión, es el comportamiento esperado.
+- **Las cuentas Microsoft** permiten jugar con autenticación real y entrar en servidores `online-mode=true`, pero la sesión es temporal: se inicia en el launcher, vive en memoria y caduca al cerrarlo. La cuenta guardada no incluye tokens.
+- **Las cuentas offline** no tienen inicio de sesión con Microsoft. No se puede acceder a Realms, skins/capas de cuenta ni logros online con ellas.
+- **Con cuentas offline, los servidores deben permitir jugadores sin autenticación** (`online-mode=false` en `server.properties`). Si un servidor rechaza la conexión de una cuenta offline, es el comportamiento esperado. Las cuentas Microsoft activas sí pueden entrar en servidores `online-mode=true`.
 - **La identidad depende del nombre.** El UUID se deriva del nombre del jugador; si cambias de nombre, Minecraft te verá como otro jugador.
-- **Los mods deben coincidir con la versión y el cargador.** Nexy puede instalar el cargador y descargar mods, pero no garantiza que un mod concreto sea estable o compatible con todos los demás.
+- **Los mods deben coincidir con la versión y el cargador.** NexyLauncher puede instalar el cargador y descargar mods, pero no garantiza que un mod concreto sea estable o compatible con todos los demás.
 - **La carpeta `mods` pertenece a la instancia activa.** Para alternar entre versiones o cargadores muy distintos, crea instancias separadas y no mezcles mods incompatibles.
 - **Los catálogos de cargadores dependen de sus servicios oficiales.** Si Fabric Meta, Quilt Meta, Forge Maven o NeoForge Maven no están disponibles, la lista o la instalación pueden fallar; revisa la consola y tu conexión.
 - **CurseForge requiere una API key y permite restricciones del autor.** Algunos archivos no se pueden descargar desde terceros; en ese caso el botón aparece como **No disponible**.
@@ -403,6 +526,7 @@ Ejemplo de argumentos JVM:
 - El portapapeles se gestiona desde el proceso principal, no desde el renderer.
 - La API key de CurseForge se guarda solo en el equipo y se envía únicamente a la API de CurseForge.
 - La API key del asistente también se guarda solo en el equipo y nunca llega al renderer. Las peticiones a la IA se hacen desde el proceso principal, por lo que la CSP no necesita abrir conexiones en la interfaz.
+- El inicio de sesión de Microsoft usa el flujo oficial de código de dispositivo desde el proceso principal. Los tokens de Microsoft, Xbox Live, XSTS y Minecraft viven **solo en memoria**: no se escriben en `settings.json`, `accounts.json`, registros ni argumentos, y se pierden al cerrar NexyLauncher. El renderer solo recibe el nombre, el UUID y el estado de la sesión.
 - El registro completo de un crash permanece en el proceso principal; el renderer recibe solo metadatos y un extracto, y la IA lo recibe únicamente con consentimiento del usuario.
 
 ---
@@ -411,7 +535,7 @@ Ejemplo de argumentos JVM:
 
 ```text
 main.js               Proceso principal: ventana, IPC, ajustes, Java, lanzamiento,
-                      cargadores, modpacks, verificación y proveedores de mods
+                      cargadores, modpacks, servidores locales, verificación y proveedores de mods
 preload.js            Puente seguro entre renderer y proceso principal
 index.html            Estructura de la interfaz y sprites SVG
 style.css             Estilos, temas, animaciones y diseño responsive
@@ -420,18 +544,19 @@ renderer-home.js      Inicio, selector de versión/cargador, dock y consola
 renderer-instances.js Instancias: lista, detalle, buscador de mods, ficha de mod, carátula, importar, exportar, ajustes, verificar/reparar, duplicar y eliminar
 renderer-pages.js     Gestor de mods, actualizador y buscador
 renderer-servers.js   Lista, formulario y estado de servidores
+renderer-localservers.js Servidores locales: crear, arrancar/parar y consola integrada
 renderer-content.js   Mundos, copias de seguridad, packs, shaders y capturas
 renderer-ai.js        Asistente de IA: chat, crash con consentimiento, arreglos y restauración
 renderer-updates.js   Aviso de nuevas versiones del launcher y comprobación manual
 renderer-i18n.js      Cambio de idioma español/inglés y diccionario de la interfaz
 renderer-settings.js  Ajustes, temas, Java, proveedor de mods y API keys
-data/                 Datos del launcher y carpeta de juego (se crea al iniciar)
+data/                 Datos del launcher en desarrollo y en modo portable (se crea al iniciar)
 assets/               Icono y panorama de la pantalla de bienvenida
-scripts/release.mjs   Compila el MSI y genera dist/updates.json para publicar
+scripts/release.mjs   Compila el instalador EXE y genera dist/updates.json para publicar
 scripts/test-update.mjs  Prueba local del aviso con un manifiesto falso
 release.config.json   URL base de descargas y modo obligatorio de la actualización
 release-notes.md      Notas que se muestran en el aviso de nueva versión
-dist/                 Instalador MSI y manifiesto updates.json generados
+dist/                 Instalador EXE y manifiesto updates.json generados
 ```
 
 ---
@@ -439,13 +564,13 @@ dist/                 Instalador MSI y manifiesto updates.json generados
 ## Solución de problemas
 
 **“Falta Java N”**  
-El aviso de lanzamiento indica la versión requerida y las detectadas. Pulsa **Instalar Java N…** para descargar un JRE de Adoptium en la carpeta que elijas, o **Elegir Java…** para usar una instalación existente. También puedes revisar las rutas por versión en **Ajustes → Java**.
+El aviso de lanzamiento indica la versión requerida y las detectadas. Pulsa **Descargar Java N** para que NexyLauncher descargue el JRE de Adoptium en `<carpeta de datos>\java\jre-N` (sin elegir carpeta), o **Elegir Java…** para usar una instalación existente. Los servidores locales descargan Java automáticamente al arrancar si falta. También puedes revisar las rutas por versión en **Ajustes → Java**.
 
 **“Minecraft se cerró antes de iniciarse”**  
 Abre la consola integrada o revisa `<carpeta del juego>\logs\nexy-launcher-last.log`. Comprueba que la versión de Java sea la correcta y que la versión esté completa. Si falla, usa **⋯ → Verificar y reparar** en el detalle de la instancia o elimina su carpeta dentro de `<carpeta del juego>\versions` y vuelve a instalarla.
 
 **El cargador no aparece en la lista o falla al instalarse**  
-Comprueba tu conexión. Fabric y Quilt usan sus servicios Meta; Forge y NeoForge usan sus repositorios Maven y un instalador Java. Revisa la consola para ver el error concreto. Si el problema persiste, instala el cargador con su instalador oficial en la misma carpeta del juego: Nexy detectará la versión y podrá lanzarla.
+Comprueba tu conexión. Fabric y Quilt usan sus servicios Meta; Forge y NeoForge usan sus repositorios Maven y un instalador Java. Revisa la consola para ver el error concreto. Si el problema persiste, instala el cargador con su instalador oficial en la misma carpeta del juego: NexyLauncher detectará la versión y podrá lanzarla.
 
 **Forge o NeoForge se queda instalando**  
 El instalador puede tardar varios minutos. No cierres el launcher. Si falla, comprueba que haya espacio en disco y que el Java elegido sea compatible con esa versión de Minecraft.
@@ -469,7 +594,7 @@ Verifica que sean `.jar` para la misma versión de Minecraft y el mismo cargador
 Comprueba que el archivo sea un `.mrpack`, un ZIP de CurseForge o una exportación de NexyLauncher. Los modpacks de CurseForge con archivos descargables necesitan una API key configurada en **Ajustes → Mods e integraciones**. Si la instancia se creó pero faltan mods, abre **Verificar** y pulsa **Reparar**.
 
 **La verificación indica librerías o recursos ausentes**  
-Pulsa **Reparar** en la ventana de verificación. Nexy descarga el perfil, el cliente, las librerías y los assets que falten. Si el problema continúa, revisa la consola y la conexión; también puedes eliminar la carpeta de la versión dentro de `<carpeta del juego>\versions` y volver a instalarla.
+Pulsa **Reparar** en la ventana de verificación. NexyLauncher descarga el perfil, el cliente, las librerías y los assets que falten. Si el problema continúa, revisa la consola y la conexión; también puedes eliminar la carpeta de la versión dentro de `<carpeta del juego>\versions` y volver a instalarla.
 
 **La exportación no incluye los mundos o los mods**  
 Los mundos solo se incluyen si marcas **Incluir también los mundos guardados**. Los mods deben estar en la carpeta `mods` de la instancia exportada y con extensión `.jar`. Las versiones, librerías y assets no se incluyen: se descargan de nuevo al jugar.
@@ -478,10 +603,10 @@ Los mundos solo se incluyen si marcas **Incluir también los mundos guardados**.
 Ejecuta `npm run dev` y revisa la consola de Electron. Comprueba que `npm install` terminó correctamente.
 
 **Quiero restablecer la configuración**  
-Usa **Ajustes → Restablecer ajustes** o cierra el launcher y elimina `<carpeta del launcher>\data\settings.json`. No borres `accounts.json` si quieres conservar tus perfiles.
+Usa **Ajustes → Restablecer ajustes** o cierra el launcher y elimina `<carpeta de datos>\settings.json`. No borres `accounts.json` si quieres conservar tus perfiles.
 
 **Quiero empezar de cero**  
-Cierra el launcher y renombra o elimina `<carpeta del launcher>\data`. Ten en cuenta que también se borrarán cuentas, servidores y la carpeta del juego si está dentro.
+Cierra el launcher y renombra o elimina `<carpeta de datos>` (`%APPDATA%\NexyLauncher` en una instalación normal). Ten en cuenta que también se borrarán cuentas, servidores y la carpeta del juego si está dentro.
 
 ---
 
@@ -491,25 +616,25 @@ Cierra el launcher y renombra o elimina `<carpeta del launcher>\data`. Ten en cu
 npm run check
 ```
 
-### Generar el instalador MSI
+### Generar el instalador EXE
 
 ```bash
 npm install
-npm run build:msi
+npm run build:exe
 ```
 
-El instalador se genera en `dist\NexyLauncher-1.0.0-x64.msi`. Es un MSI WiX **por usuario** (no pide administrador), con accesos directos en el escritorio y el menú Inicio. Al instalar, los datos se guardan en `data\` junto al ejecutable instalado.
+El instalador se genera en `dist\NexyLauncher-1.1.0-x64.exe`. Es un instalador **NSIS asistido**: por defecto se instala solo para tu usuario (sin pedir administrador), te deja **elegir la carpeta de instalación** y crea accesos directos en el escritorio y el menú Inicio. Los datos se guardan en `%APPDATA%\NexyLauncher`, no en la carpeta elegida, así que puedes actualizar o reinstalar en otra ubicación sin mover nada.
 
-La primera compilación descarga Electron y WiX en la caché de `electron-builder`; necesita conexión a Internet. El MSI no está firmado digitalmente, así que Windows SmartScreen puede mostrar un aviso hasta que se firme con un certificado.
+La primera compilación descarga Electron y las herramientas de NSIS en la caché de `electron-builder`; necesita conexión a Internet. El EXE no está firmado digitalmente, así que Windows SmartScreen puede mostrar un aviso hasta que se firme con un certificado.
 
 ### Publicar una actualización
 
-El launcher consulta al arrancar un manifiesto público (`updates.json`). Si la versión publicada es mayor que la instalada, aparece un aviso en **Inicio** y en **Ajustes → Acerca de**. El botón **Descargar** abre el MSI en el navegador; al instalar encima, la carpeta `data\` se conserva.
+El launcher consulta al arrancar un manifiesto público (`updates.json`). Si la versión publicada es mayor que la instalada, aparece un aviso en **Inicio** y en **Ajustes → Acerca de**. El botón **Descargar** abre el EXE en el navegador; al instalar, puedes elegir cualquier carpeta y tus datos se conservan.
 
 **1. Configura el alojamiento una sola vez**
 
 - En `main.js`, cambia `UPDATE_MANIFEST_URL` por la URL HTTPS del `updates.json`.
-- En `release.config.json`, pon en `downloadBaseUrl` la carpeta HTTPS donde estarán los MSI.
+- En `release.config.json`, pon en `downloadBaseUrl` la carpeta HTTPS donde estarán los EXE.
 
 Con GitHub Releases, por ejemplo:
 
@@ -534,11 +659,11 @@ Edita `release-notes.md` con una línea `- ...` por cada novedad.
 npm run release -- 2.1.0
 ```
 
-El comando actualiza `package.json`, compila el MSI, calcula el SHA-256 y crea `dist\updates.json` con la URL de descarga.
+El comando actualiza `package.json`, compila el instalador EXE, calcula el SHA-256 y crea `dist\updates.json` con la URL de descarga.
 
 **4. Sube ambos archivos**
 
-Sube `dist\NexyLauncher-2.1.0-x64.msi` y `dist\updates.json` al mismo release o carpeta. En la siguiente apertura, quien tenga una versión anterior verá el aviso.
+Sube `dist\NexyLauncher-2.1.0-x64.exe` y `dist\updates.json` al mismo release o carpeta. En la siguiente apertura, quien tenga una versión anterior verá el aviso.
 
 Detalles:
 
