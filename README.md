@@ -2,6 +2,8 @@
 
 Launcher de escritorio para **Minecraft: Java Edition** con **cuentas offline y cuentas Microsoft**. Interfaz oscura en español, gestión de versiones, cargadores de mods, mods, servidores y ajustes de lanzamiento, construido con **Electron** y **minecraft-launcher-core**.
 
+**[Descargar NexyLauncher 1.1.0 para Windows](https://github.com/Nexysito/nexy-launcher/releases/latest)**
+
 > Proyecto independiente. No está afiliado a Mojang Studios ni a Microsoft. Minecraft es una marca de Mojang Studios.
 
 ---

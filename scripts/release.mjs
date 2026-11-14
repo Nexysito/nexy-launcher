@@ -48,6 +48,16 @@ function clip(text, max = 240) {
   return `${(space > 80 ? cut.slice(0, space) : cut).trimEnd()}…`;
 }
 
+/* El aviso del launcher muestra estas notas como texto plano. */
+function plainText(value) {
+  return String(value || '')
+    .replace(/\[([^\]]+)\]\([^)]+\)/g, '$1')
+    .replace(/\*\*([^*]+)\*\*/g, '$1')
+    .replace(/`([^`]+)`/g, '$1')
+    .replace(/\s+/g, ' ')
+    .trim();
+}
+
 function readNotes() {
   const fallback = ['Mejoras de estabilidad y correcciones.'];
   if (!fs.existsSync(notesPath)) return fallback;
@@ -55,7 +65,7 @@ function readNotes() {
   const lines = fs.readFileSync(notesPath, 'utf8').split(/\r?\n/);
   const bullets = lines
     .filter((line) => /^\s*[-*]\s+\S/.test(line))
-    .map((line) => clip(line.replace(/^\s*[-*]\s+/, '').replace(/\s+/g, ' ').trim()))
+    .map((line) => clip(plainText(line.replace(/^\s*[-*]\s+/, ''))))
     .filter(Boolean);
   if (bullets.length) return bullets.slice(0, 8);
 
@@ -65,7 +75,7 @@ function readNotes() {
     .join(' ')
     .replace(/\s+/g, ' ')
     .trim();
-  return text ? [clip(text)] : fallback;
+  return text ? [clip(plainText(text))] : fallback;
 }
 
 const pkg = JSON.parse(fs.readFileSync(packagePath, 'utf8'));
@@ -94,7 +104,8 @@ if (requested) {
   }
 }
 
-run('npm', ['run', 'build:exe']);
+/* Permite regenerar solo el manifiesto si el instalador ya está compilado. */
+if (process.env.NEXY_SKIP_BUILD !== '1') run('npm', ['run', 'build:exe']);
 
 const installerName = `NexyLauncher-${version}-x64.exe`;
 const installerPath = path.join(distDir, installerName);
